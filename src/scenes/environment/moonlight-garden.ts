@@ -930,12 +930,11 @@ function appendGrass(
   const dir = new THREE.Vector3();
   const nrm = new THREE.Vector3();
   const base = new THREE.Vector3();
-  const mid = new THREE.Vector3();
   const tip = new THREE.Vector3();
   const left = new THREE.Vector3();
   const right = new THREE.Vector3();
-  const midLeft = new THREE.Vector3();
-  const midRight = new THREE.Vector3();
+  const topLeft = new THREE.Vector3();
+  const topRight = new THREE.Vector3();
 
   const push = (vertex: THREE.Vector3, weight: number, r: number, g: number, b: number): void => {
     position.push(vertex.x, vertex.y, vertex.z);
@@ -955,15 +954,14 @@ function appendGrass(
     nrm.crossVectors(dir, side).normalize();
 
     base.set(blade.x, blade.y, blade.z);
-    mid.copy(base).addScaledVector(dir, blade.height * 0.56);
     tip.copy(base).addScaledVector(dir, blade.height);
 
     const halfWidth = blade.width * 0.5;
     const tipHalf = halfWidth * 0.35;
     left.copy(base).addScaledVector(side, halfWidth);
     right.copy(base).addScaledVector(side, -halfWidth);
-    midLeft.copy(tip).addScaledVector(side, tipHalf);
-    midRight.copy(tip).addScaledVector(side, -tipHalf);
+    topLeft.copy(tip).addScaledVector(side, tipHalf);
+    topRight.copy(tip).addScaledVector(side, -tipHalf);
 
     const tint = blade.tint;
     const r = GRASS_BASE_COLOR.r * tint;
@@ -973,10 +971,10 @@ function appendGrass(
     // 一片扁平的叶子：四个角，两片三角形
     push(left, 0, r, g, b);
     push(right, 0, r, g, b);
-    push(midRight, 1, r, g, b);
+    push(topRight, 1, r, g, b);
     push(left, 0, r, g, b);
-    push(midRight, 1, r, g, b);
-    push(midLeft, 1, r, g, b);
+    push(topRight, 1, r, g, b);
+    push(topLeft, 1, r, g, b);
   }
 }
 
