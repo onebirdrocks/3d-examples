@@ -18,7 +18,14 @@ npm run verify    # 回归检查：逐个打开 48 个场景，查报错 / 黑�
 
 `npm run verify` 需要本机装有 Chrome 或 Chromium（不额外下载浏览器）。它会逐个打开全部场景，检查控制台报错、错误面板与画面是否全黑 —— GitHub Actions 上每次 push 都会自动跑一遍。
 
-回归检查在 CI 上按 **6 个分片并行**跑（`VERIFY_SHARD` / `VERIFY_SHARDS`）：查逻辑一字不改，只是每个 runner 只跑其中 8 个场景。总算力不变，墙钟时间从近一小时降到约 1/6。本地不设这两个变量时仍是全量检查。
+回归检查在 CI 上做了两件事来压时间：
+
+- **按 6 个分片并行**（`VERIFY_SHARD` / `VERIFY_SHARDS`）：每个 runner 只跑其中 8 个场景，查逻辑一字不改。
+- **降档渲染**（`VERIFY_WIDTH` / `VERIFY_HEIGHT` / `VERIFY_QUALITY`）：视口 480×300、画质 0.75。
+  CI 的 runner 没有 GPU，SwiftShader 的光栅化与着色器编译是主要开销；降的是渲染成本，
+  三项判据（控制台报错 / 错误面板 / 非全黑）一个没动。
+
+本地不设这些变量时仍是全量、全画质的检查。
 
 | 页面 | 用途 |
 | --- | --- |

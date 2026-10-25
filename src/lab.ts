@@ -3,6 +3,7 @@
  * 通过 ?scene=<id> 加载对应场景，使用 import.meta.glob 动态发现场景模块，
  * 因此在部分场景文件尚未写完时也能单独验证其余场景。
  */
+import * as THREE from 'three';
 import { Stage } from './core/stage.js';
 import type { SceneDefinition } from './scenes/types.js';
 
@@ -15,6 +16,9 @@ const errDetail = document.querySelector<HTMLElement>('#err-detail')!;
 
 const params = new URLSearchParams(location.search);
 const sceneId = params.get('scene') ?? '';
+// 画质系数：回归检查会用 ?quality=0.5 降低成本（粒子数与细分密度都随它缩放），
+// 人眼调试时保持默认的 1。
+const quality = THREE.MathUtils.clamp(Number(params.get('quality') ?? 1) || 1, 0.25, 2);
 
 function showError(error: unknown): void {
   err.style.display = 'grid';
@@ -49,7 +53,7 @@ async function main(): Promise<void> {
 
   meta.innerHTML = `<b>${def.title}</b> · ${def.subtitle}<br /><span>${def.description}</span>`;
 
-  const stage = new Stage({ canvas, quality: 1 });
+  const stage = new Stage({ canvas, quality });
   try {
     const instance = await def.create(stage.context);
     stage.mount(instance, def);

@@ -29,8 +29,20 @@ const BASE = `http://localhost:${PORT}`;
 const SHARD = Math.max(0, Number(process.env.VERIFY_SHARD ?? 0));
 const SHARDS = Math.max(1, Number(process.env.VERIFY_SHARDS ?? 1));
 
-/** 允许的最低平均亮度（0~1）。极暗的助眠场景会接近这个值。 */
+/**
+ * 允许的最低平均亮度（0~1）。极暗的助眠场景会接近这个值。
+ * 判的是「有没有渲染出来」，不是「画面对不对」——所以可以把检查跑在低画质上。
+ */
 const MIN_LUMA = 0.004;
+
+/**
+ * 检查用的渲染档位：视口与画质都比人眼调试低一档。
+ * CI 的 runner 没有 GPU，SwiftShader 光栅化与着色器编译是主要开销，
+ * 降档能显著缩短每场景耗时；三项检查（报错 / 错误面板 / 非全黑）的判据不变。
+ */
+const CHECK_WIDTH = Number(process.env.VERIFY_WIDTH ?? 480);
+const CHECK_HEIGHT = Number(process.env.VERIFY_HEIGHT ?? 300);
+const CHECK_QUALITY = process.env.VERIFY_QUALITY ?? '0.75';
 
 const CHROME_PATHS = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -137,14 +149,14 @@ async function main() {
 
   try {
     for (const id of ids) {
-      const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
+      const page = await browser.newPage({ viewport: { width: CHECK_WIDTH, height: CHECK_HEIGHT } });
       const errors = [];
       page.on('console', (msg) => {
         if (msg.type() === 'error') errors.push(msg.text().slice(0, 300));
       });
       page.on('pageerror', (err) => errors.push(`pageerror: ${err.message}`.slice(0, 300)));
 
-      await page.goto(`${BASE}/lab.html?scene=${encodeURIComponent(id)}`, {
+      await page.goto(`${BASE}/lab.html?scene=${encodeURIComponent(id)}&quality=${CHECK_QUALITY}`, {
         waitUntil: 'networkidle',
       });
       // 等场景挂载并渲染几帧
