@@ -1631,7 +1631,6 @@ function createMoonlightGarden(ctx: SceneContext): SceneInstance {
   steppingStoneMaterial.envMap = ctx.env.envMap;
   steppingStoneMaterial.envMapIntensity = 0.06;
 
-  const steppingStones: THREE.Mesh[] = [];
   const stonePath: { x: number; z: number }[] = [];
   for (let i = 0; i < 10; i += 1) {
     const t = i / 9;
@@ -1651,7 +1650,6 @@ function createMoonlightGarden(ctx: SceneContext): SceneInstance {
     stone.castShadow = true;
     stone.receiveShadow = true;
     root.add(stone);
-    steppingStones.push(stone);
   }
 
   // 苔地上的草丛：直接复用叶片材质，所以同样吃月光和灯笼的暖光
