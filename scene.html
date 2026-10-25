@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060a" />
+    <title>场景查看 · Lumen Atlas</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236ea8ff'/%3E%3Cstop offset='1' stop-color='%23a06bff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <div class="viewer">
+      <canvas id="scene-canvas" class="viewer__canvas"></canvas>
+
+      <div class="viewer__top">
+        <a class="back-link" href="./index.html">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path
+              d="M10 3L5 8l5 5"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          场景索引
+        </a>
+
+        <div class="viewer__heading">
+          <p class="viewer__eyebrow" id="scene-index">—</p>
+          <h1 class="viewer__title">
+            <span id="scene-title">加载中</span>
+            <em id="scene-subtitle"></em>
+          </h1>
+        </div>
+
+        <div class="viewer__actions">
+          <div class="audio-ctl" id="audio-ctl" hidden>
+            <button class="icon-btn" id="sound-toggle" title="环境音" aria-label="开关环境音">
+              <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M4 8v4h2.5L10 15V5L6.5 8H4z"
+                  fill="currentColor"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                  stroke-linejoin="round"
+                />
+                <path
+                  id="sound-wave"
+                  d="M13 7.2c.9.8 1.4 1.8 1.4 2.8s-.5 2-1.4 2.8M15.4 5c1.5 1.3 2.4 3 2.4 5s-.9 3.7-2.4 5"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                />
+              </svg>
+            </button>
+            <input
+              class="volume"
+              id="volume"
+              type="range"
+              min="0"
+              max="100"
+              value="55"
+              aria-label="环境音音量"
+            />
+          </div>
+          <button class="btn btn--primary" id="enter-xr" disabled>沉浸模式</button>
+        </div>
+      </div>
+
+      <div class="xr-banner" id="xr-banner"></div>
+
+      <div class="viewer__bottom">
+        <div class="viewer__info">
+          <p class="viewer__desc" id="scene-desc"></p>
+          <ul class="viewer__tags" id="scene-tags"></ul>
+        </div>
+
+        <div class="viewer__nav">
+          <button class="icon-btn" id="prev-scene" title="上一个场景" aria-label="上一个场景">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M10 3L5 8l5 5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+          <select class="scene-select" id="scene-select" aria-label="选择场景"></select>
+          <button class="icon-btn" id="next-scene" title="下一个场景" aria-label="下一个场景">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M6 3l5 5-5 5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="viewer__loading" id="loading">
+        <div class="spinner"></div>
+        <span>正在生成场景</span>
+      </div>
+    </div>
+
+    <script type="module" src="/src/viewer.ts"></script>
+  </body>
+</html>

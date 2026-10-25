@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#05060a" />
+    <title>Lumen Atlas · 光影图谱</title>
+    <meta
+      name="description"
+      content="十种实时 3D 渲染效果，一套 three.js 代码同时跑在网页浏览器与 Apple Vision Pro 上。"
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236ea8ff'/%3E%3Cstop offset='1' stop-color='%23a06bff'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='9' fill='url(%23g)'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <canvas id="xr-canvas" aria-hidden="true"></canvas>
+
+    <div class="ambient" aria-hidden="true">
+      <span class="blob blob--a"></span>
+      <span class="blob blob--b"></span>
+      <span class="blob blob--c"></span>
+      <div class="grain"></div>
+    </div>
+
+    <header class="masthead">
+      <a class="brand" href="./index.html">
+        <span class="brand__mark"></span>
+        <span class="brand__text">Lumen<span>Atlas</span></span>
+      </a>
+      <div class="masthead__meta">
+        <span class="chip chip--xr" id="xr-chip">检测 WebXR…</span>
+        <span class="chip" id="scene-count">— 个场景</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="hero__eyebrow">WebXR · Apple Vision Pro Ready</p>
+        <h1 class="hero__title">把 3D 效果<br />放进真实空间</h1>
+        <p class="hero__lede">
+          十种实时渲染效果，一套 three.js 代码。桌面浏览器里拖动查看；戴上 Vision Pro
+          后，它们会真实地环绕在你身边，伸手即可切换。
+        </p>
+        <div class="hero__actions">
+          <button class="btn btn--primary" id="enter-xr" disabled>进入沉浸空间浏览</button>
+          <a class="btn btn--ghost" href="./scene.html?id=breathing">开始静心冥想</a>
+          <button class="btn btn--ghost" id="scroll-gallery">浏览场景索引</button>
+        </div>
+        <p class="hero__note" id="xr-note"></p>
+      </section>
+
+      <section class="gallery" id="gallery">
+        <div class="section-head">
+          <h2>场景索引</h2>
+          <div class="filters" id="filters"></div>
+        </div>
+        <div class="grid" id="grid"></div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>基于 <code>three.js</code> + <code>WebXR</code> 构建 · 同一套代码适配网页与 Vision Pro</span>
+      <span id="footer-status">缩略图生成中…</span>
+    </footer>
+
+    <script type="module" src="/src/gallery.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,235 @@
+/**
+ * 环境音播放器
+ * ---------------------------------------------------------------
+ * 用 Web Audio API 播放冥想场景的背景音乐：
+ * - 解码为 AudioBuffer，整曲循环；
+ * - 循环接缝处做交叉淡化（crossfade），听感上无缝；
+ * - 切换场景时在旧曲与新曲之间做渐变切换；
+ * - 支持音量、暂停、恢复与淡入淡出。
+ *
+ * 说明：浏览器要求音频必须由用户手势触发，因此首次 play() 会在被拒绝时
+ * 抛出错误，由界面提示用户点击开启。
+ */
+
+import type { AudioAnalysis } from './audio-analysis.js';
+
+export interface AmbientAudioOptions {
+  /** 循环接缝的交叉淡化时长（秒）。 */
+  crossfade?: number;
+  /** 切换曲目时的渐变时长（秒）。 */
+  transition?: number;
+  /** 淡入时长（秒）。 */
+  fadeIn?: number;
+}
+
+const DEFAULT_CROSSFADE = 1.4;
+
+export class AmbientAudio {
+  private context: AudioContext | null = null;
+  private master: GainNode | null = null;
+  private analyser: AnalyserNode | null = null;
+  private buffers = new Map<string, AudioBuffer>();
+  private currentPath: string | null = null;
+  private active: { source: AudioBufferSourceNode; gain: GainNode; timer: number } | null = null;
+  private readonly options: Required<AmbientAudioOptions>;
+  private volume = 0.55;
+
+  constructor(options: AmbientAudioOptions = {}) {
+    this.options = {
+      crossfade: options.crossfade ?? DEFAULT_CROSSFADE,
+      transition: options.transition ?? 1.8,
+      fadeIn: options.fadeIn ?? 2.2,
+    };
+  }
+
+  /**
+   * 把频谱分析接到外部的分析器上，用于驱动画面随音乐变化。
+   * 不接的话，场景仍可用呼吸节奏兜底。
+   */
+  attachAnalysis(analysis: AudioAnalysis): void {
+    this.analysis = analysis;
+  }
+
+  private analysis: AudioAnalysis | null = null;
+
+  /** 是否正在播放。 */
+  get isPlaying(): boolean {
+    return this.active !== null;
+  }
+
+  /** 当前曲目路径。 */
+  get current(): string | null {
+    return this.currentPath;
+  }
+
+  get currentVolume(): number {
+    return this.volume;
+  }
+
+  /**
+   * 播放指定音频（相对站点根路径，例如 'audio/rain-window.mp3'）。
+   * 同一首重复调用不会重启；换曲会做交叉过渡。
+   */
+  async play(path: string): Promise<void> {
+    const context = this.ensureContext();
+    if (context.state === 'suspended') {
+      await context.resume();
+    }
+
+    const buffer = await this.loadBuffer(path);
+
+    if (this.active && this.currentPath === path) {
+      // 同一首已经在放，直接恢复
+      this.setMasterGain(this.volume);
+      return;
+    }
+
+    const now = context.currentTime;
+    const crossfade = this.options.transition;
+
+    if (this.active) {
+      // 旧曲淡出
+      const old = this.active;
+      old.gain.gain.cancelScheduledValues(now);
+      old.gain.gain.setValueAtTime(old.gain.gain.value, now);
+      old.gain.gain.linearRampToValueAtTime(0.0001, now + crossfade);
+      window.setTimeout(() => {
+        try {
+          old.source.stop();
+        } catch {
+          /* 已经停止 */
+        }
+      }, (crossfade + 0.2) * 1000);
+      this.active = null;
+    }
+
+    this.currentPath = path;
+    this.startLoop(buffer, now, crossfade);
+  }
+
+  /** 暂停（保留当前曲目位置，重新播放会从头开始）。 */
+  pause(): void {
+    if (!this.active || !this.context) return;
+    const now = this.context.currentTime;
+    this.active.gain.gain.cancelScheduledValues(now);
+    this.active.gain.gain.setValueAtTime(this.active.gain.gain.value, now);
+    this.active.gain.gain.linearRampToValueAtTime(0.0001, now + 0.6);
+    const active = this.active;
+    this.active = null;
+    this.analysis?.detach();
+    window.setTimeout(() => {
+      try {
+        active.source.stop();
+      } catch {
+        /* 已经停止 */
+      }
+    }, 800);
+  }
+
+  /** 停止并清除当前曲目。 */
+  stop(): void {
+    if (!this.active) return;
+    try {
+      this.active.source.stop();
+    } catch {
+      /* 已经停止 */
+    }
+    this.active = null;
+    this.currentPath = null;
+    this.analysis?.detach();
+  }
+
+  /** 设置音量（0~1）。 */
+  setVolume(value: number): void {
+    this.volume = Math.max(0, Math.min(1, value));
+    if (!this.context || !this.master) return;
+    const now = this.context.currentTime;
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setTargetAtTime(this.volume, now, 0.08);
+  }
+
+  /** 释放全部资源。 */
+  dispose(): void {
+    this.stop();
+    this.buffers.clear();
+    void this.context?.close();
+    this.context = null;
+    this.master = null;
+  }
+
+  private ensureContext(): AudioContext {
+    if (this.context) return this.context;
+    const Ctor: typeof AudioContext =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    this.context = new Ctor();
+    this.master = this.context.createGain();
+    this.master.gain.value = 0.0001;
+
+    // 频谱分析接在主音量之后，场景据此驱动画面
+    this.analyser = this.context.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0.72;
+    this.master.connect(this.analyser);
+    this.analyser.connect(this.context.destination);
+    this.analysis?.attach(this.analyser);
+
+    return this.context;
+  }
+
+  private setMasterGain(value: number): void {
+    if (!this.context || !this.master) return;
+    const now = this.context.currentTime;
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setTargetAtTime(Math.max(0.0001, value), now, 0.12);
+  }
+
+  private async loadBuffer(path: string): Promise<AudioBuffer> {
+    const cached = this.buffers.get(path);
+    if (cached) return cached;
+
+    const context = this.ensureContext();
+    const response = await fetch(path);
+    if (!response.ok) throw new Error(`环境音加载失败：${path} (${response.status})`);
+    const bytes = await response.arrayBuffer();
+    const buffer = await context.decodeAudioData(bytes);
+    this.buffers.set(path, buffer);
+    return buffer;
+  }
+
+  /**
+   * 启动循环播放。
+   * 每隔 (时长 - 交叉淡化) 秒启动一个新的声源，并在开头 X 秒内与上一个声源交叉淡化，
+   * 从而消除 MP3 循环接缝的断点与爆音。
+   */
+  private startLoop(buffer: AudioBuffer, when: number, fadeIn: number): void {
+    const context = this.context!;
+    const master = this.master!;
+    const crossfade = Math.min(this.options.crossfade, buffer.duration * 0.2);
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = false;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(1, when + fadeIn);
+    source.connect(gain).connect(master);
+    source.start(when);
+
+    this.active = { source, gain, timer: 0 };
+    this.setMasterGain(this.volume);
+
+    // 递归安排下一次接缝
+    const interval = Math.max(0.5, buffer.duration - crossfade);
+    const scheduleNext = (nextWhen: number): void => {
+      const timer = window.setTimeout(() => {
+        if (!this.active || this.active.source !== source) return;
+        this.startLoop(buffer, nextWhen, crossfade);
+      }, Math.max(0, (nextWhen - context.currentTime) * 1000));
+      if (this.active) this.active.timer = timer;
+    };
+
+    scheduleNext(when + interval);
+  }
+}

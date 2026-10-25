@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>场景实验室 · Lumen Atlas</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+      #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      #meta {
+        position: fixed; left: 16px; bottom: 16px; z-index: 10;
+        font: 500 13px/1.5 ui-sans-serif, -apple-system, "PingFang SC", sans-serif;
+        color: #cfe0ff; background: rgba(8, 12, 22, .72);
+        border: 1px solid rgba(120, 170, 255, .22);
+        padding: 10px 14px; border-radius: 12px; backdrop-filter: blur(12px);
+        max-width: 420px;
+      }
+      #meta b { color: #fff; }
+      #meta span { color: #7f93b8; }
+      #err {
+        position: fixed; inset: 0; z-index: 20; display: none;
+        place-content: center; padding: 40px; text-align: center;
+        font: 500 15px/1.7 ui-sans-serif, -apple-system, "PingFang SC", sans-serif;
+        color: #ffb4b4; background: rgba(5, 6, 10, .94);
+      }
+      #err pre { text-align: left; max-width: 760px; overflow: auto; font-size: 12px; color: #ff8f8f; }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="meta">加载中…</div>
+    <div id="err"><div><h2>场景加载失败</h2><pre id="err-detail"></pre></div></div>
+    <script type="module" src="/src/lab.ts"></script>
+  </body>
+</html>
