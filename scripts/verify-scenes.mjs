@@ -57,6 +57,21 @@ function findChrome() {
 }
 
 /** 从注册表里读出全部场景 id。 */
+/** 彻底干掉 dev server：连它所在的进程组一起杀，避免留下占着管道的孙进程。 */
+function stopServer(child) {
+  if (!child?.pid) return;
+  try {
+    process.kill(-child.pid, 'SIGKILL');
+  } catch {
+    // 进程组已经没了，退回到只杀直接子进程
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* 已经退出 */
+    }
+  }
+}
+
 async function readSceneIds() {
   const source = await import('node:fs/promises').then((fs) =>
     fs.readFile(resolve(ROOT, 'src/scenes/index.ts'), 'utf8'),
@@ -69,9 +84,13 @@ async function readSceneIds() {
 }
 
 function startServer() {
+  // detached: 自己成一个进程组 —— 否则 kill 掉 npx 之后，真正的 vite
+  // （它是 npx 的孙进程）还活着，并占着 stdio 管道，Node 进程永远退不出。
+  // 在 CI 上表现为：检查早就跑完并打印了结果，job 却一直挂着到被取消。
   const child = spawn('npx', ['vite', '--port', String(PORT), '--strictPort'], {
     cwd: ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
   return new Promise((resolvePromise, reject) => {
     let settled = false;
@@ -194,7 +213,7 @@ async function main() {
     }
   } finally {
     await browser.close();
-    server.kill('SIGTERM');
+    stopServer(server);
   }
 
   console.log('');
@@ -206,6 +225,9 @@ async function main() {
     process.exit(1);
   }
   console.log(`✓ 全部 ${ids.length} 个场景通过`);
+  // 明确退出：dev server 的孙进程与浏览器的残留句柄都可能让 Node 挂住，
+  // 在 CI 上就是「检查结果都打出来了，job 却一直不结束」。
+  process.exit(0);
 }
 
 main().catch((error) => {
