@@ -20,6 +20,7 @@ export default defineConfig({
       input: {
         main: r('./index.html'),
         scene: r('./scene.html'),
+        lab: r('./lab.html'),
       },
     },
   },
