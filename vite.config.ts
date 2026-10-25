@@ -21,6 +21,7 @@ export default defineConfig({
         main: r('./index.html'),
         scene: r('./scene.html'),
         lab: r('./lab.html'),
+        webgpu: r('./webgpu.html'),
       },
     },
   },
