@@ -351,6 +351,12 @@ export const materialLabScene: SceneDefinition = {
   accent: '#7aa2ff',
   gradient: ['#1c2742', '#080b12'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.16,
+    realTimeReflection: true,
+    lightProbe: true,
+  },
   create: (ctx) => createMaterialLab(ctx),
 };
 

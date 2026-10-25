@@ -428,6 +428,12 @@ export const celadonScene: SceneDefinition = {
   accent: '#8fd8c0',
   gradient: ['#16302c', '#080b0e'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.13,
+    realTimeReflection: true,
+    lightProbe: true,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createCeladon(ctx);
   },

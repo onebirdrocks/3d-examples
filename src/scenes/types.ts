@@ -48,6 +48,11 @@ export interface SceneContext {
    * 用户转头时声音会从对应方向传来。
    */
   readonly listener: AudioListener;
+  /**
+   * 共享混响总线的输入节点（可选）。
+   * 场景把空间音源接到它上面，声音就会带上房间感。
+   */
+  readonly reverb?: AudioNode;
 }
 
 /** 场景运行期实例。 */
@@ -130,6 +135,31 @@ export interface BreathingPattern {
   holdOut?: number;
 }
 
+/**
+ * 场景的光照与真实感偏好。全部可选，由核心层统一实现，
+ * 场景只需要声明意图，不必自己写渲染管线。
+ */
+export interface SceneLighting {
+  /** 目标曝光倍率（默认 1），用于整体压暗 / 提亮。 */
+  exposure?: number;
+  /** 自动曝光：按画面亮度像眼睛一样平滑调整曝光。 */
+  autoExposure?: boolean;
+  /**
+   * 自动曝光的目标平均亮度（0~1）。
+   * 默认 0.18（中灰）。暗场冥想类场景应调到 0.05~0.08，
+   * 否则画面会被提亮成白天，失去夜色氛围。
+   */
+  autoExposureKey?: number;
+  /** 实时环境反射：用 CubeCamera 抓取场景自身作为环境贴图。 */
+  realTimeReflection?: boolean;
+  /** 实时反射的采样间隔（帧），默认 45。 */
+  reflectionInterval?: number;
+  /** 间接光探针：从场景自身烘焙 SH 间接漫反射。 */
+  lightProbe?: boolean;
+  /** 阴影柔和度（0~1），放大 PCF 采样半径，让硬边阴影变软。 */
+  softShadows?: number;
+}
+
 /** 场景定义，对应画廊中的一张卡片。 */
 export interface SceneDefinition {
   /** 唯一 id，用于 URL 与场景切换。 */
@@ -155,6 +185,8 @@ export interface SceneDefinition {
   readonly audio?: string;
   /** 呼吸节奏，冥想类场景用于同步画面脉动与引导提示。 */
   readonly breathing?: BreathingPattern;
+  /** 光照与真实感偏好，由核心层统一实现。 */
+  readonly lighting?: SceneLighting;
   /** 创建场景实例。 */
   create(ctx: SceneContext): SceneInstance | Promise<SceneInstance>;
 }

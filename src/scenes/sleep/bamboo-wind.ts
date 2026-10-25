@@ -612,6 +612,7 @@ function createBambooWind(ctx: SceneContext): SceneInstance {
 
   // ── 空间音源：竹叶的沙沙声从林子深处传来 ────────────────────────
   const wind = attachSpatialSource(root, ctx.listener, {
+      reverbNode: ctx.reverb,
     url: assetUrl('audio/sfx-wind.mp3'),
     position: [-1.8, 2.4, -2.6],
     volume: 0.4,
@@ -628,6 +629,7 @@ function createBambooWind(ctx: SceneContext): SceneInstance {
     xrDistance: 3,
     framing: { distance: 4.4, height: 1.45, targetY: 2.5, width: 9 },
     update(time: number, delta: number, context: SceneContext): void {
+      wind.update(context.listener, root, delta);
       audio.update(time, delta, context);
       const state = audio.state;
 
@@ -660,8 +662,7 @@ function createBambooWind(ctx: SceneContext): SceneInstance {
       moon.intensity = 0.12 + state.level * 0.1;
     },
     dispose(): void {
-      wind.stop();
-      wind.disconnect();
+      wind.dispose();
       disposeObject(root);
     },
   };
@@ -678,6 +679,10 @@ export const bambooWindScene: SceneDefinition = {
   category: SLEEP_CATEGORY,
   audio: 'bamboo-wind.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.065,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createBambooWind(ctx);
   },

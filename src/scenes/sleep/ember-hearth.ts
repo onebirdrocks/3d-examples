@@ -353,6 +353,7 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
 
   // ── 空间音源：炉火噼啪声从炉膛里传来 ────────────────────────────
   const crackle = attachSpatialSource(root, ctx.listener, {
+      reverbNode: ctx.reverb,
     url: assetUrl('audio/sfx-fire.mp3'),
     position: [0, 0.62, 0],
     volume: 0.4,
@@ -556,6 +557,7 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
     xrDistance: 2.2,
     framing: { distance: 1.85, height: 1.05, targetY: HEARTH_Y, width: 2.6 },
     update(time: number, delta: number, context: SceneContext): void {
+      crackle.update(context.listener, root, delta);
       audio.update(time, delta, context);
       const state = audio.state;
 
@@ -597,8 +599,7 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
       fireLight.position.y = HEARTH_Y + 0.04 + pulse * 0.03;
     },
     dispose(): void {
-      crackle.stop();
-      crackle.disconnect();
+      crackle.dispose();
       disposeObject(root);
     },
   };
@@ -615,6 +616,10 @@ export const emberHearthScene: SceneDefinition = {
   category: SLEEP_CATEGORY,
   audio: 'enigma-sadness.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.075,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createEmberHearth(ctx);
   },

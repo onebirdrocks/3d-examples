@@ -39,8 +39,11 @@ import forestStreamScene from './environment/forest-stream.js';
 import seaCliffScene from './environment/sea-cliff.js';
 import snowfieldScene from './environment/snowfield.js';
 import desertNightScene from './environment/desert-night.js';
+import teaRoomScene from './environment/tea-room.js';
+import planetariumScene from './environment/planetarium.js';
 
 import silkDrapeScene from './simulation/silk-drape.js';
+import pianoRuinsScene from './simulation/piano-ruins.js';
 
 /** 全部场景，按画廊展示顺序排列。 */
 export const SCENES: readonly SceneDefinition[] = [
@@ -79,7 +82,10 @@ export const SCENES: readonly SceneDefinition[] = [
   seaCliffScene,
   snowfieldScene,
   desertNightScene,
+  teaRoomScene,
+  planetariumScene,
   silkDrapeScene,
+  pianoRuinsScene,
 ];
 
 export const SCENE_CATEGORIES = [

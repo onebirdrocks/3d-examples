@@ -339,6 +339,10 @@ export const rainwindowScene: SceneDefinition = {
   category: 'meditation',
   audio: 'rain-window.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.055,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createRainWindow(ctx);
   },

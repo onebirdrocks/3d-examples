@@ -628,6 +628,10 @@ export const gpuTideScene: SceneDefinition = {
   gradient: ['#06283f', '#03060f'],
   category: 'procedural',
   breathing: { inhale: 5, hold: 2, exhale: 7, holdOut: 2 },
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.05,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createGpuTide(ctx);
   },

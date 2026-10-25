@@ -469,6 +469,10 @@ export const snowfallScene: SceneDefinition = {
   category: SLEEP_CATEGORY,
   audio: 'enigma-monastery.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.065,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createSnowfall(ctx);
   },

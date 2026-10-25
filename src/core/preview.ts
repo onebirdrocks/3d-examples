@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { createEnvironment } from './environment.js';
 import { applyFraming } from './framing.js';
 import { AudioAnalysis } from './audio-analysis.js';
+import { createReverbBus } from './audio.js';
+import { LightingRig } from './lighting.js';
 import type { SceneContext, SceneDefinition, SceneEnvironment } from '../scenes/types.js';
 
 export interface ThumbnailOptions {
@@ -29,6 +31,8 @@ export class ThumbnailBaker {
   private readonly warmupFrames: number;
   private readonly analysis = new AudioAnalysis();
   private readonly listener = new THREE.AudioListener();
+  private readonly reverb = createReverbBus(this.listener.context);
+  private readonly rig: LightingRig;
 
   constructor(options: ThumbnailOptions = {}) {
     const width = options.width ?? 640;
@@ -57,6 +61,7 @@ export class ThumbnailBaker {
 
     this.env = createEnvironment(this.renderer);
     this.hostScene.environment = this.env.envMap;
+    this.rig = new LightingRig(this.renderer, this.hostScene);
     this.hostScene.background = new THREE.Color(0x070a12);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -74,6 +79,7 @@ export class ThumbnailBaker {
       height: Math.max(1, Math.floor(size.y)),
       audio: this.analysis,
       listener: this.listener,
+      reverb: this.reverb,
     };
   }
 
@@ -94,11 +100,21 @@ export class ThumbnailBaker {
       applyFraming(camera, instance.framing);
     }
 
+    // 缩略图沿用场景声明的光照偏好；自动曝光在这里直接对齐（没有时间慢慢适应）
+    this.rig.configure(def);
+    this.renderer.toneMappingExposure = def.lighting?.exposure ?? 1;
+
     for (let i = 0; i < warmup; i += 1) {
       const t = i / 60;
       instance.update(t, 1 / 60, this.context);
       this.renderer.render(this.hostScene, camera);
     }
+
+    if (def.lighting?.autoExposure) {
+      this.rig.snapExposure(camera);
+      this.renderer.render(this.hostScene, camera);
+    }
+    this.rig.teardown();
 
     const url = this.canvas.toDataURL('image/png');
 

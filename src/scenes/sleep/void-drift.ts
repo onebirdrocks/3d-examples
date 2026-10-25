@@ -437,6 +437,10 @@ export const voidDriftScene: SceneDefinition = {
   category: SLEEP_CATEGORY,
   audio: 'deep-drone.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.05,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createVoidDrift(ctx);
   },

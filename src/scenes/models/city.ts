@@ -523,6 +523,13 @@ export const cityScene: SceneDefinition = {
   accent: '#5fd0ff',
   gradient: ['#0f2a4a', '#05080f'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.1,
+    realTimeReflection: true,
+    lightProbe: true,
+    softShadows: 0.6,
+  },
   create: (ctx) => createCity(ctx),
 };
 

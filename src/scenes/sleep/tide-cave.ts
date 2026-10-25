@@ -555,6 +555,10 @@ export const tideCaveScene: SceneDefinition = {
   category: SLEEP_CATEGORY,
   audio: 'underwater-sleep.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.065,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createTideCave(ctx);
   },

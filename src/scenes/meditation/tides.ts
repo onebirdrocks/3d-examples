@@ -330,6 +330,10 @@ export const tidesScene: SceneDefinition = {
   category: 'meditation',
   audio: 'night-tides.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.065,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createTides(ctx);
   },

@@ -545,6 +545,12 @@ export const terrariumScene: SceneDefinition = {
   accent: '#9fe08a',
   gradient: ['#1b3324', '#070c09'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.12,
+    realTimeReflection: true,
+    lightProbe: true,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createTerrarium(ctx);
   },

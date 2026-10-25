@@ -343,6 +343,10 @@ export const breathingScene: SceneDefinition = {
   category: 'meditation',
   audio: 'breathing-light.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.055,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createBreathing(ctx);
   },

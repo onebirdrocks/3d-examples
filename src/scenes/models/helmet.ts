@@ -259,6 +259,13 @@ export const helmetScene: SceneDefinition = {
   accent: '#8fd8ff',
   gradient: ['#16304a', '#05070c'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.14,
+    realTimeReflection: true,
+    lightProbe: true,
+    softShadows: 0.5,
+  },
   create: (ctx) => createHelmet(ctx),
 };
 

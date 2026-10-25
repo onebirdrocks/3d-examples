@@ -52,7 +52,7 @@ async function main(): Promise<void> {
   const stage = new Stage({ canvas, quality: 1 });
   try {
     const instance = await def.create(stage.context);
-    stage.mount(instance);
+    stage.mount(instance, def);
     stage.start();
   } catch (error) {
     showError(error);

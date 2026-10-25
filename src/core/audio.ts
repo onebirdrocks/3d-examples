@@ -25,6 +25,61 @@ export interface AmbientAudioOptions {
 
 const DEFAULT_CROSSFADE = 1.4;
 
+/**
+ * 创建一个共享的**混响总线**。
+ *
+ * 用程序化生成的脉冲响应（早期反射 + 指数衰减噪声）做卷积，
+ * 让空间音源听起来真的在「一个房间里」，而不是贴在耳边。
+ * 返回的 GainNode 作为混响输入，音源把它接上去即可。
+ */
+export function createReverbBus(context: BaseAudioContext, wetness = 0.32): GainNode {
+  const convolver = context.createConvolver();
+  convolver.buffer = createImpulseResponse(context, 1.8, 2.6);
+
+  const input = context.createGain();
+  input.gain.value = 1;
+  const wet = context.createGain();
+  wet.gain.value = wetness;
+
+  input.connect(convolver);
+  convolver.connect(wet);
+  wet.connect(context.destination);
+  return input;
+}
+
+/** 程序化生成一段脉冲响应。 */
+function createImpulseResponse(
+  context: BaseAudioContext,
+  duration: number,
+  decay: number,
+): AudioBuffer {
+  const rate = context.sampleRate;
+  const length = Math.max(1, Math.floor(rate * duration));
+  const buffer = context.createBuffer(2, length, rate);
+
+  for (let channel = 0; channel < 2; channel += 1) {
+    const data = buffer.getChannelData(channel);
+    // 指数衰减的噪声尾巴
+    for (let i = 0; i < length; i += 1) {
+      const t = i / length;
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * 0.45;
+    }
+    // 几个早期反射，左右声道错开一点点
+    const taps: [number, number][] = [
+      [11, 0.55],
+      [23, 0.42],
+      [37, 0.32],
+      [53, 0.26],
+      [79, 0.18],
+    ];
+    for (const [delayMs, gain] of taps) {
+      const index = Math.floor((delayMs / 1000) * rate) + channel * 17;
+      if (index < length) data[index] += gain * (channel === 0 ? 1 : -1);
+    }
+  }
+  return buffer;
+}
+
 export class AmbientAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;

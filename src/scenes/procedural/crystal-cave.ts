@@ -484,6 +484,10 @@ export const crystalCaveScene: SceneDefinition = {
   category: 'procedural',
   audio: 'underwater-sleep.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.085,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createCrystalCave(ctx);
   },

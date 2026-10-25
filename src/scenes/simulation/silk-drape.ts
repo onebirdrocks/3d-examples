@@ -504,6 +504,10 @@ export const silkDrapeScene: SceneDefinition = {
   category: 'simulation',
   audio: 'zen-stones.mp3',
   breathing: { inhale: 4, hold: 4, exhale: 6 },
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.115,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createSilkDrape(ctx);
   },

@@ -323,6 +323,10 @@ export const mandalaScene: SceneDefinition = {
   category: 'meditation',
   audio: 'slow-mandala.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.07,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createMandala(ctx);
   },

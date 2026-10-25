@@ -264,6 +264,7 @@ function createCandle(ctx: SceneContext): SceneInstance {
   // ── 空间音源：火焰的噼啪声从蜡烛所在方位传来 ──────────────────────
   // 戴上 Vision Pro 转头时，噼啪声会从蜡烛的方向响起。
   const crackle = attachSpatialSource(root, ctx.listener, {
+      reverbNode: ctx.reverb,
     url: assetUrl('audio/sfx-fire.mp3'),
     position: [0, 0.92, 0],
     volume: 0.35,
@@ -313,6 +314,7 @@ function createCandle(ctx: SceneContext): SceneInstance {
     xrDistance: 1.8,
     framing: { distance: 1.3, height: 0.62, targetY: 0.52, width: 1.6 },
     update(time: number, delta: number, context: SceneContext): void {
+      crackle.update(context.listener, root, delta);
       sampleBreath(BREATHING, time, breath);
       const level = breath.level;
 
@@ -352,8 +354,7 @@ function createCandle(ctx: SceneContext): SceneInstance {
       backdrop.uniforms.uBreath.value = level;
     },
     dispose(): void {
-      crackle.stop();
-      crackle.disconnect();
+      crackle.dispose();
       glowTexture.dispose();
       disposeObject(root);
     },
@@ -371,6 +372,10 @@ export const candleScene: SceneDefinition = {
   category: 'meditation',
   audio: 'candle-flame.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.065,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createCandle(ctx);
   },

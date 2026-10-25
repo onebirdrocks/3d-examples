@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
+import { XRPlanes } from 'three/addons/webxr/XRPlanes.js';
+import { HandSkeleton } from './hand-skeleton.js';
 import type { Stage } from '../core/stage.js';
 import type { AmbientAudio } from '../core/audio.js';
 import type { PinchInfo, SceneDefinition } from '../scenes/types.js';
@@ -17,6 +18,41 @@ export interface XrExplorerOptions {
   /** AR 模式的 DOM 叠层根节点（用于显示操作提示）。 */
   overlayRoot?: HTMLElement;
   onModeChange?: (mode: XrMode, scene: SceneDefinition | null) => void;
+}
+
+/** 持久锚点的本地存储键。 */
+const ANCHOR_STORAGE_KEY = 'lumen-atlas:persistent-anchors';
+
+interface StoredAnchor {
+  /** 持久锚点句柄。 */
+  handle: string;
+  /** 场景 id。 */
+  sceneId: string;
+  /** 放置位置。 */
+  position: [number, number, number];
+  /** 放置朝向。 */
+  quaternion: [number, number, number, number];
+}
+
+/** 读取本地保存的持久锚点。 */
+function loadStoredAnchors(): StoredAnchor[] {
+  try {
+    const raw = localStorage.getItem(ANCHOR_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as StoredAnchor[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 保存持久锚点。 */
+function saveStoredAnchors(list: StoredAnchor[]): void {
+  try {
+    localStorage.setItem(ANCHOR_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    /* 隐私模式下写不进去就算了 */
+  }
 }
 
 /** 场景切换动画时长（秒）。 */
@@ -52,8 +88,8 @@ export class XrExplorer {
   private activeScene: SceneDefinition | null = null;
 
   /* 手部追踪与捏合 */
-  private readonly handFactory = new XRHandModelFactory();
   private readonly handModels: THREE.Object3D[] = [];
+  private readonly handSkeletons: HandSkeleton[] = [];
   private readonly pinching = new Set<unknown>();
   private readonly pinchInfo: PinchInfo = {
     phase: 'start',
@@ -68,6 +104,7 @@ export class XrExplorer {
   private readonly pinchHand = new THREE.Vector3();
 
   /* AR 命中测试 */
+  private planes: XRPlanes | null = null;
   private hitTestSource: XRHitTestSource | null = null;
   private hitResult: XRHitTestResult | null = null;
   private reticle: THREE.Mesh | null = null;
@@ -148,9 +185,11 @@ export class XrExplorer {
 
     for (let i = 0; i < 2; i += 1) {
       const hand = xrManager.getHand(i);
-      hand.add(this.handFactory.createHandModel(hand, 'spheres'));
+      const skeleton = new HandSkeleton(i === 0 ? 0x9fc6ff : 0xffc98f);
+      hand.add(skeleton.group);
       this.stage.hostScene.add(hand);
       this.handModels.push(hand);
+      this.handSkeletons.push(skeleton);
     }
 
     // three r186 会派发 pinchstart / pinchend，但类型表里没收录，这里用宽松签名注册
@@ -188,6 +227,10 @@ export class XrExplorer {
     session.addEventListener('end', this.handleSessionEnd);
     session.addEventListener('select', this.handleArSelect);
     this.setupHandTracking();
+
+    // 真实平面检测：让内容能贴合你真实的桌面 / 墙面
+    this.planes = new XRPlanes(this.stage.renderer);
+    this.stage.hostScene.add(this.planes);
 
     const viewerSpace = await session.requestReferenceSpace('viewer');
     if (typeof session.requestHitTestSource !== 'function') {
@@ -269,6 +312,14 @@ export class XrExplorer {
 
     instance.root.position.copy(this.arPosition);
     instance.root.quaternion.copy(this.arQuaternion);
+
+    // 若命中了真实平面，让内容「贴着」那个平面站（桌面 / 墙面）
+    const plane = this.findNearestPlane(this.arPosition);
+    if (plane) {
+      plane.getWorldQuaternion(this.arQuaternion);
+      instance.root.quaternion.copy(this.arQuaternion);
+    }
+
     instance.root.visible = true;
     this.arPlaced = true;
     reticle.visible = false;
@@ -276,11 +327,85 @@ export class XrExplorer {
     // 尽量创建锚点，让场景稳稳留在真实空间里
     try {
       const anchor = await this.hitResult?.createAnchor?.();
-      if (anchor) this.arAnchor = anchor;
+      if (anchor) {
+        this.arAnchor = anchor;
+        await this.persistAnchor(anchor, this.activeScene?.id ?? '');
+      }
     } catch {
       // 设备不支持锚点时忽略：位置仍然可用，只是不会跟随环境微调
     }
   };
+
+  /**
+   * 申请持久锚点句柄并保存到本地。
+   *
+   * visionOS 支持持久锚点：场景放进房间后，下次打开仍在原位。
+   */
+  private async persistAnchor(anchor: XRAnchor, sceneId: string): Promise<void> {
+    const request = (anchor as unknown as { requestPersistentHandle?: () => Promise<string> })
+      .requestPersistentHandle;
+    if (typeof request !== 'function') return;
+
+    try {
+      const handle = await request.call(anchor);
+      const list = loadStoredAnchors().filter((item) => item.sceneId !== sceneId);
+      list.push({
+        handle,
+        sceneId,
+        position: this.arPosition.toArray() as [number, number, number],
+        quaternion: this.arQuaternion.toArray() as [number, number, number, number],
+      });
+      saveStoredAnchors(list);
+    } catch (error) {
+      console.warn('[xr] 持久锚点申请失败', error);
+    }
+  }
+
+  /**
+   * 尝试恢复上次放置的场景：找到对应的持久锚点就直接放回原位，
+   * 免得每次都要重新对准平面。
+   */
+  private async restoreAnchor(session: XRSession, sceneId: string): Promise<boolean> {
+    const stored = loadStoredAnchors().find((item) => item.sceneId === sceneId);
+    if (!stored) return false;
+
+    const restore = (session as unknown as {
+      restorePersistentAnchor?: (handle: string) => Promise<XRAnchor>;
+    }).restorePersistentAnchor;
+    if (typeof restore !== 'function') return false;
+
+    try {
+      const anchor = await restore.call(session, stored.handle);
+      this.arAnchor = anchor;
+      this.arPosition.set(...stored.position);
+      this.arQuaternion.set(...stored.quaternion);
+      this.arPlaced = true;
+      if (this.reticle) this.reticle.visible = false;
+      return true;
+    } catch (error) {
+      console.warn('[xr] 持久锚点恢复失败', error);
+      return false;
+    }
+  }
+
+  /** 找到离给定点最近的真实平面网格。 */
+  private findNearestPlane(point: THREE.Vector3): THREE.Mesh | null {
+    if (!this.planes) return null;
+    let best: THREE.Mesh | null = null;
+    let bestDistance = Infinity;
+    this.tmpVector.set(0, 0, 0);
+    for (const child of this.planes.children) {
+      if (!(child instanceof THREE.Mesh)) continue;
+      child.getWorldPosition(this.tmpVector);
+      const distance = this.tmpVector.distanceTo(point);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = child;
+      }
+    }
+    // 1.2 米以内才认为是同一个平面，避免贴到不相干的远处平面
+    return best && bestDistance < 1.2 ? best : null;
+  }
 
   /** 锚点存在时，让内容跟随锚点微调位置。 */
   private updateAnchor(): void {
@@ -495,9 +620,19 @@ export class XrExplorer {
   private async mountScene(def: SceneDefinition): Promise<void> {
     try {
       const instance = await def.create(this.stage.context);
-      this.stage.mount(instance);
-      // AR 模式下先藏起来，等用户选好位置再显示
-      if (this.mode === 'ar') instance.root.visible = false;
+      this.stage.mount(instance, def);
+
+      // AR 模式：先尝试恢复上次的持久锚点，没有再让用户手动放置
+      if (this.mode === 'ar') {
+        instance.root.visible = false;
+        const restored =
+          this.session && (await this.restoreAnchor(this.session, def.id));
+        if (restored) {
+          instance.root.position.copy(this.arPosition);
+          instance.root.quaternion.copy(this.arQuaternion);
+          instance.root.visible = true;
+        }
+      }
       this.createBackPanel(def);
       await this.playSceneAudio(def);
     } catch (error) {
@@ -553,7 +688,15 @@ export class XrExplorer {
     }
 
     this.updatePinch();
+    this.updateHandSkeletons();
   };
+
+  /** 用 WebXR 的关节数据刷新手部骨架。 */
+  private updateHandSkeletons(): void {
+    for (let i = 0; i < this.handModels.length; i += 1) {
+      this.handSkeletons[i]?.update(this.handModels[i]);
+    }
+  }
 
   private updateHover(delta: number): void {
     const session = this.session;

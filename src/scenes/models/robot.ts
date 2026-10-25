@@ -252,6 +252,13 @@ export const robotScene: SceneDefinition = {
   accent: '#ff9d5c',
   gradient: ['#3a2417', '#0b0906'],
   category: 'model',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.14,
+    realTimeReflection: true,
+    lightProbe: true,
+    softShadows: 0.7,
+  },
   create: (ctx) => createRobot(ctx),
 };
 

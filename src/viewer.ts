@@ -113,7 +113,7 @@ async function switchTo(id: string): Promise<void> {
       instance.dispose();
       return;
     }
-    stage.mount(instance);
+    stage.mount(instance, def);
     setupControls(instance.ownsCamera ?? false);
     loadingEl.hidden = true;
   } catch (error) {

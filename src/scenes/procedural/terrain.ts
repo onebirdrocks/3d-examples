@@ -407,6 +407,11 @@ export const terrainScene: SceneDefinition = {
   accent: '#ff9c52',
   gradient: ['#8a3f22', '#141d38'],
   category: 'procedural',
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.16,
+    softShadows: 0.5,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createTerrain(ctx);
   },

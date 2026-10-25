@@ -665,6 +665,7 @@ function createForestStream(ctx: SceneContext): SceneInstance {
 
   // ── 空间音源：溪水声从画面左侧的溪流处传来 ──────────────────────
   const stream = attachSpatialSource(root, ctx.listener, {
+      reverbNode: ctx.reverb,
     url: assetUrl('audio/sfx-stream.mp3'),
     position: [-1.6, 0.35, 0.4],
     volume: 0.45,
@@ -679,6 +680,7 @@ function createForestStream(ctx: SceneContext): SceneInstance {
     xrDistance: 3,
     framing: { distance: 4.8, height: 1.5, targetY: 0.6, width: 9 },
     update(time: number, delta: number, context: SceneContext): void {
+      stream.update(context.listener, root, delta);
       driver.update(context, delta);
 
       const pulse = driver.pulse;
@@ -712,8 +714,7 @@ function createForestStream(ctx: SceneContext): SceneInstance {
       bankMaterial.envMapIntensity = 0.06 + level * 0.05;
     },
     dispose(): void {
-      stream.stop();
-      stream.disconnect();
+      stream.dispose();
       floorTexture.dispose();
       fernTexture.dispose();
       mistTexture.dispose();

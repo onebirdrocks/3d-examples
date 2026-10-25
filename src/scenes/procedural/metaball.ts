@@ -349,6 +349,13 @@ export const metaballScene: SceneDefinition = {
   gradient: ['#3a1206', '#08060a'],
   category: 'procedural',
   breathing: { inhale: 4, hold: 1, exhale: 6, holdOut: 2 },
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.08,
+    realTimeReflection: true,
+    lightProbe: true,
+    softShadows: 0.5,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createMetaball(ctx);
   },

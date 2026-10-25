@@ -997,6 +997,11 @@ export const neonPipelineScene: SceneDefinition = {
   category: 'procedural',
   audio: 'rain-window.mp3',
   breathing: BREATHING,
+  lighting: {
+    autoExposure: true,
+    autoExposureKey: 0.1,
+    softShadows: 0.4,
+  },
   create(ctx: SceneContext): SceneInstance {
     return createNeonPipeline(ctx);
   },

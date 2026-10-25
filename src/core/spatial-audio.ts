@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { assetUrl } from './loader.js';
 
 export interface SpatialSourceOptions {
   /** 音频地址（相对站点根路径或绝对 URL）。 */
@@ -13,22 +14,122 @@ export interface SpatialSourceOptions {
   refDistance?: number;
   /** 最远可听距离（米）。 */
   maxDistance?: number;
+  /** 共享混响总线的输入节点（可选）：接上后声音带上房间感。 */
+  reverbNode?: AudioNode;
 }
 
 /**
- * 在场景中的某个位置放置一个**空间音源**。
+ * 一个**空间音源**。
  *
- * three 的 `PositionalAudio` 会用原生 `PannerNode` 定位声源，
+ * three 的 `PositionalAudio` 用原生 `PannerNode` 定位声源，
  * 配合跟随相机的 `AudioListener`（见 `Stage.listener`），
  * 用户在 VR 里转头时，环境声会从对应方向传来 —— 这是头显里最直接的感知升级。
  *
- * @returns 音源对象；场景销毁时调用 `sound.stop()` 并从 root 移除即可。
+ * 在此之上再做两件事，让它更"真实"：
+ * - **几何遮挡**：从听者到声源做射线检测，被挡住时高频被吃掉、音量下降
+ *   （就像真实世界里隔着墙听声音）；
+ * - **共享混响**：接到主混响卷积上，房间里听起来有空间感。
+ */
+export class SpatialSource {
+  readonly sound: THREE.PositionalAudio;
+
+  private readonly baseVolume: number;
+  private readonly filter: BiquadFilterNode | null = null;
+  private readonly occluders: THREE.Object3D[] = [];
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly dir = new THREE.Vector3();
+  private readonly origin = new THREE.Vector3();
+  private blocked = 0;
+  private frame = 0;
+  private occludersCollected = false;
+
+  constructor(
+    sound: THREE.PositionalAudio,
+    options: SpatialSourceOptions,
+    reverbInput?: AudioNode,
+  ) {
+    this.sound = sound;
+    this.baseVolume = options.volume ?? 0.5;
+
+    const context = sound.context;
+    const bus = reverbInput ?? options.reverbNode;
+    if (context) {
+      this.filter = context.createBiquadFilter();
+      this.filter.type = 'lowpass';
+      this.filter.frequency.value = 20000;
+      this.filter.Q.value = 0.4;
+      sound.getOutput().connect(this.filter);
+      if (bus) this.filter.connect(bus);
+    }
+  }
+
+  /** 每帧调用：周期性做遮挡检测并平滑应用。 */
+  update(listener: THREE.AudioListener, root: THREE.Object3D, delta: number): void {
+    this.frame += 1;
+    if (this.frame % 6 === 0) {
+      this.checkOcclusion(listener, root);
+    }
+
+    // 平滑：被遮挡时高频逐渐被吃掉，音量随之下降
+    const target = this.blocked > 0.5 ? 620 : 20000;
+    if (this.filter) {
+      this.filter.frequency.value = THREE.MathUtils.damp(
+        this.filter.frequency.value,
+        target,
+        6,
+        delta,
+      );
+    }
+    this.sound.setVolume(this.baseVolume * (1 - this.blocked * 0.7));
+  }
+
+  private checkOcclusion(listener: THREE.AudioListener, root: THREE.Object3D): void {
+    if (!this.occludersCollected) {
+      this.occludersCollected = true;
+      root.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.visible) this.occluders.push(child);
+      });
+    }
+    if (this.occluders.length === 0) {
+      this.blocked = 0;
+      return;
+    }
+
+    listener.getWorldPosition(this.origin);
+    this.sound.getWorldPosition(this.dir);
+    this.dir.sub(this.origin);
+    const distance = this.dir.length();
+    if (distance < 0.001) return;
+    this.dir.divideScalar(distance);
+
+    this.raycaster.set(this.origin, this.dir);
+    this.raycaster.far = distance - 0.05;
+    const hits = this.raycaster.intersectObjects(this.occluders, false);
+    const target = hits.length > 0 ? 1 : 0;
+    this.blocked += (target - this.blocked) * 0.4;
+  }
+
+  dispose(): void {
+    this.sound.stop();
+    this.sound.disconnect();
+    this.filter?.disconnect();
+  }
+}
+
+/**
+ * 在场景某个位置放置一个**空间音源**。
+ *
+ * @param root 场景根节点（音源会挂到它下面）
+ * @param listener 跟随相机的监听器
+ * @param options 音源配置
+ * @param reverbInput 共享混响的输入节点（可选）
  */
 export function attachSpatialSource(
   root: THREE.Object3D,
   listener: THREE.AudioListener,
-  options: SpatialSourceOptions
-): THREE.PositionalAudio {
+  options: SpatialSourceOptions,
+  reverbInput?: AudioNode,
+): SpatialSource {
   const sound = new THREE.PositionalAudio(listener);
 
   const position = Array.isArray(options.position)
@@ -54,7 +155,7 @@ export function attachSpatialSource(
       console.warn('[spatial-audio] 空间音源播放失败（可能需要用户手势）', error);
     });
 
-  return sound;
+  return new SpatialSource(sound, options, reverbInput);
 }
 
 /** 抓取并解码音频。 */
@@ -64,3 +165,5 @@ async function loadAudioBuffer(context: BaseAudioContext, url: string): Promise<
   const bytes = await response.arrayBuffer();
   return context.decodeAudioData(bytes);
 }
+
+export { assetUrl };

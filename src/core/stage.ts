@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { createEnvironment } from './environment.js';
 import { applyFraming } from './framing.js';
 import { AudioAnalysis } from './audio-analysis.js';
-import type { SceneContext, SceneEnvironment, SceneInstance } from '../scenes/types.js';
+import { LightingRig } from './lighting.js';
+import { createReverbBus } from './audio.js';
+import type { SceneContext, SceneDefinition, SceneEnvironment, SceneInstance } from '../scenes/types.js';
 
 /** XR 中非环绕型场景与用户之间的默认距离（米）。 */
 const DEFAULT_XR_DISTANCE = 3;
@@ -28,6 +30,10 @@ export class Stage {
   readonly audio = new AudioAnalysis();
   /** 空间音频监听器：每帧跟随当前相机（XR 下是头显位置）。 */
   readonly listener = new THREE.AudioListener();
+  /** 光照装置：自动曝光 / 实时环境反射 / 间接光探针。 */
+  private readonly rig: LightingRig;
+  /** 共享混响总线（空间音源接上去就有房间感）。 */
+  private readonly reverb: AudioNode;
 
   private instance: SceneInstance | null = null;
   private readonly timer = new THREE.Timer();
@@ -39,6 +45,7 @@ export class Stage {
   private xrActive = false;
   private manualPlacement = false;
   private updateErrorReported = false;
+  private rigSoftness = 0;
   private readonly frameListeners = new Set<(time: number, delta: number) => void>();
 
   constructor(options: StageOptions) {
@@ -63,6 +70,8 @@ export class Stage {
 
     this.env = createEnvironment(this.renderer);
     this.hostScene.environment = this.env.envMap;
+    this.rig = new LightingRig(this.renderer, this.hostScene);
+    this.reverb = createReverbBus(this.listener.context);
 
     this.fallbackCamera = new THREE.PerspectiveCamera(55, 1, 0.05, 300);
     this.fallbackCamera.position.set(0, 1.5, 4.5);
@@ -117,17 +126,39 @@ export class Stage {
       height: Math.max(1, Math.floor(size.y)),
       audio: this.audio,
       listener: this.listener,
+      reverb: this.reverb,
     };
   }
 
   /** 挂载一个场景实例，卸载上一个。 */
-  mount(instance: SceneInstance): void {
+  mount(instance: SceneInstance, def?: SceneDefinition): void {
     this.unmount();
 
     this.instance = instance;
     this.hostScene.add(instance.root);
     this.applyPlacement();
     this.applyFraming(instance);
+    this.rig.configure(def);
+    this.rigSoftness = def?.lighting?.softShadows ?? 0;
+    this.applySoftShadows(instance);
+  }
+
+  /** 按场景声明放大阴影采样半径，让硬边阴影变软。 */
+  private applySoftShadows(instance: SceneInstance): void {
+    const soft = this.rigSoftness;
+    if (!soft) return;
+    instance.root.traverse((child) => {
+      const light = child as THREE.DirectionalLight & THREE.SpotLight & THREE.PointLight;
+      if (!light.isLight || !light.castShadow) return;
+      const shadow = light.shadow;
+      if (!shadow) return;
+      shadow.radius = 1 + soft * 7;
+      if (shadow.mapSize.width < 2048) {
+        shadow.mapSize.set(2048, 2048);
+        shadow.map?.dispose();
+        shadow.map = null;
+      }
+    });
   }
 
   /** 标记当前是否处于 XR 会话中（影响内容在用户前方的摆放）。 */
@@ -159,6 +190,8 @@ export class Stage {
     this.hostScene.remove(this.instance.root);
     this.instance.dispose();
     this.instance = null;
+    this.rig.teardown();
+    this.rigSoftness = 0;
   }
 
   private applyFraming(instance: SceneInstance): void {
@@ -217,6 +250,7 @@ export class Stage {
 
     const camera = instance?.camera ?? this.fallbackCamera;
     this.syncListener(camera);
+    this.rig.update(camera, delta);
     this.renderer.render(this.hostScene, camera);
   };
 
