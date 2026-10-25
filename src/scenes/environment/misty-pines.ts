@@ -246,11 +246,11 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   const sunDirection = new THREE.Vector3(-0.42, 0.78, 0.46).normalize();
   const sky = createScenicSky(
     {
-      zenith: 0x7e96a6,
-      horizon: 0xc9d6d4,
-      ground: 0x4a5347,
-      band: 0xe4e6d9,
-      bandStrength: 0.3,
+      zenith: 0x93a8b2,
+      horizon: 0xd2dbd7,
+      ground: 0x555e50,
+      band: 0xe9eadf,
+      bandStrength: 0.42,
       bandY: 0.06,
       bandWidth: 0.16,
       sunDir: sunDirection,
@@ -266,7 +266,7 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   textures.push(floorTexture);
 
   const floorMaterial = new THREE.MeshStandardMaterial({
-    color: 0xc2c4ab,
+    color: 0xd0d1b6,
     map: floorTexture,
     roughness: 0.97,
     metalness: 0,
@@ -278,6 +278,8 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   const floorSegments = Math.round(96 * quality);
   const floorGeometry = new THREE.PlaneGeometry(150, 150, floorSegments, floorSegments);
   floorGeometry.rotateX(-Math.PI / 2);
+  // 先把地面挪到最终位置，这样顶点坐标就是世界坐标，树正好长在地上
+  floorGeometry.translate(0, 0, -34);
   const floorPosition = floorGeometry.getAttribute('position') as THREE.BufferAttribute;
   for (let i = 0; i < floorPosition.count; i += 1) {
     const x = floorPosition.getX(i);
@@ -289,7 +291,6 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
 
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.name = 'forest-floor';
-  floor.position.set(0, 0, -34);
   floor.receiveShadow = true;
   root.add(floor);
 
@@ -310,7 +311,7 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   setProgramKey(barkMaterial, 'misty-pines/bark/frost');
 
   const needleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x4d6846,
+    color: 0x55704c,
     roughness: 0.93,
     metalness: 0,
     flatShading: true,
@@ -476,7 +477,7 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   const lights = ctx.env.createStudioLights();
   lights.traverse((child) => {
     if (child instanceof THREE.Light) {
-      child.intensity *= 0.28;
+      child.intensity *= 0.34;
       child.castShadow = false;
       child.color.setHex(0xc6dae6);
     }
@@ -488,7 +489,7 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
   root.add(sun);
   root.add(sun.target);
 
-  const ambient = new THREE.HemisphereLight(0xc6d9e2, 0x4a5340, 1.25);
+  const ambient = new THREE.HemisphereLight(0xd2e2e8, 0x6d7558, 1.55);
   root.add(ambient);
 
   const updateScale = (context: SceneContext): void => {
@@ -544,7 +545,7 @@ function createMistyPines(ctx: SceneContext): SceneInstance {
       sky.uniforms.uSkyBandStrength.value = 0.26 + level * 0.16;
       sky.uniforms.uSkySunStrength.value = 0.45 + level * 0.35;
       sun.intensity = 1.15 + level * 0.5;
-      ambient.intensity = 1.05 + level * 0.35;
+      ambient.intensity = 1.35 + level * 0.4;
 
       updateScale(context);
     },

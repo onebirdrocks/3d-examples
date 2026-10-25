@@ -65,7 +65,7 @@ const BUND_WIDTH = 0.9;
 /** 每一级水田的径向宽度（不含田埂）。 */
 const PADDY_WIDTH = 4.2;
 /** 圆弧张开的角度（弧度）。 */
-const ARC = 1.2;
+const ARC = 1.45;
 
 /* ------------------------------------------------------------------ *
  * 水面
@@ -466,6 +466,35 @@ function createRiceTerrace(ctx: SceneContext): SceneInstance {
   }
   root.add(terraceGroup);
 
+  // ── 谷底 ─────────────────────────────────────────────────────────────
+  const valleyMaterial = new THREE.MeshStandardMaterial({
+    color: 0x93a06f,
+    roughness: 0.98,
+    metalness: 0,
+  });
+  valleyMaterial.envMap = envMap;
+  valleyMaterial.envMapIntensity = 0.05;
+  applyHaze(valleyMaterial, { color: HAZE, near: 8, far: 90 });
+
+  const valleyGeometry = new THREE.PlaneGeometry(260, 260, 48, 48);
+  valleyGeometry.rotateX(-Math.PI / 2);
+  const valleyPosition = valleyGeometry.getAttribute('position') as THREE.BufferAttribute;
+  for (let i = 0; i < valleyPosition.count; i += 1) {
+    const x = valleyPosition.getX(i);
+    const z = valleyPosition.getZ(i);
+    // 谷底也有起伏，不是一块平板
+    const roll = (fbm2D(x * 0.03 + 4.1, z * 0.03 + 9.7, 3) - 0.5) * 2.4;
+    const fine = (fbm2D(x * 0.11 + 1.3, z * 0.11 + 6.1, 2) - 0.5) * 0.5;
+    valleyPosition.setY(i, roll + fine);
+  }
+  valleyPosition.needsUpdate = true;
+  valleyGeometry.computeVertexNormals();
+
+  const valley = new THREE.Mesh(valleyGeometry, valleyMaterial);
+  valley.name = 'valley-floor';
+  valley.position.set(0, -0.12, -10);
+  root.add(valley);
+
   // ── 稻苗 ─────────────────────────────────────────────────────────────
   const swayUniforms = createWindSwayUniforms();
   const riceMaterial = new THREE.MeshStandardMaterial({
@@ -481,25 +510,50 @@ function createRiceTerrace(ctx: SceneContext): SceneInstance {
   attachWindSway(riceMaterial, swayUniforms);
   setProgramKey(riceMaterial, 'rice-terrace/rice/sway');
 
+  // 所有稻苗合成一个几何体：几百丛也只占一个 draw call，
+  // 而风摆的相位由世界坐标决定，所以每一丛仍然各自摇摆。
   const tuftGeometry = createRiceTuftGeometry();
-  const tuftCount = Math.round(260 * quality);
+  const tuftParts: THREE.BufferGeometry[] = [];
+  const tuftMatrix = new THREE.Matrix4();
+  const tuftQuaternion = new THREE.Quaternion();
+  const tuftScale = new THREE.Vector3();
+  const tuftPosition = new THREE.Vector3();
+
+  const pushTuft = (x: number, y: number, z: number, scale: number): void => {
+    const clone = tuftGeometry.clone();
+    tuftPosition.set(x, y, z);
+    tuftQuaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), random() * Math.PI);
+    tuftScale.setScalar(scale);
+    tuftMatrix.compose(tuftPosition, tuftQuaternion, tuftScale);
+    clone.applyMatrix4(tuftMatrix);
+    tuftParts.push(clone);
+  };
+
+  const tuftCount = Math.round(300 * quality);
   for (let i = 0; i < tuftCount; i += 1) {
     const level = Math.floor(random() * levelCount);
     const outer = FIRST_RADIUS - level * RADIUS_STEP;
     const radius = outer - random() * PADDY_WIDTH;
     const angle = -Math.PI / 2 + (random() * 2 - 1) * ARC;
-
-    const tuft = new THREE.Mesh(tuftGeometry, riceMaterial);
-    tuft.name = 'rice';
-    tuft.position.set(
+    pushTuft(
       FIELD_CENTER.x + Math.cos(angle) * radius,
       level * LEVEL_STEP + 0.01,
       FIELD_CENTER.z - Math.sin(angle) * radius,
+      0.65 + random() * 0.7,
     );
-    tuft.rotation.y = random() * Math.PI;
-    tuft.scale.setScalar(0.65 + random() * 0.7);
-    root.add(tuft);
   }
+
+  // 谷底的一片秧田
+  const valleyTuftCount = Math.round(340 * quality);
+  for (let i = 0; i < valleyTuftCount; i += 1) {
+    const x = (random() * 2 - 1) * 26;
+    const z = 16 - random() * 44;
+    pushTuft(x, -0.1, z, 0.55 + random() * 0.7);
+  }
+
+  const rice = new THREE.Mesh(mergeSwayGeometries(tuftParts), riceMaterial);
+  rice.name = 'rice-field';
+  root.add(rice);
 
   // ── 梯田间流动的雾 ───────────────────────────────────────────────────
   const mistSpace = new ParticleSpace({
@@ -646,7 +700,7 @@ function createRiceTerrace(ctx: SceneContext): SceneInstance {
     camera,
     immersive: true,
     xrDistance: 3,
-    framing: { distance: 14, height: 5.2, targetY: 2.1, width: 22 },
+    framing: { distance: 14, height: 5.2, targetY: 2.1, width: 16 },
     update(time: number, delta: number, context: SceneContext): void {
       driver.update(context, delta);
 
