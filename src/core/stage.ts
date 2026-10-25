@@ -26,6 +26,8 @@ export class Stage {
   readonly env: SceneEnvironment;
   /** 音频分析：场景据此让 3D 跟随音乐变化。 */
   readonly audio = new AudioAnalysis();
+  /** 空间音频监听器：每帧跟随当前相机（XR 下是头显位置）。 */
+  readonly listener = new THREE.AudioListener();
 
   private instance: SceneInstance | null = null;
   private readonly timer = new THREE.Timer();
@@ -35,6 +37,7 @@ export class Stage {
   private resizeObserver: ResizeObserver | null = null;
   private running = false;
   private xrActive = false;
+  private manualPlacement = false;
   private updateErrorReported = false;
   private readonly frameListeners = new Set<(time: number, delta: number) => void>();
 
@@ -113,6 +116,7 @@ export class Stage {
       width: Math.max(1, Math.floor(size.x)),
       height: Math.max(1, Math.floor(size.y)),
       audio: this.audio,
+      listener: this.listener,
     };
   }
 
@@ -134,10 +138,19 @@ export class Stage {
 
   private applyPlacement(): void {
     const instance = this.instance;
-    if (!instance) return;
+    if (!instance || this.manualPlacement) return;
     // 仅在 XR 会话中把非环绕型内容推到用户正前方，网页模式保持原始构图。
     const distance = instance.xrDistance ?? DEFAULT_XR_DISTANCE;
     instance.root.position.z = this.xrActive && !instance.immersive ? -distance : 0;
+  }
+
+  /**
+   * 手动摆放模式：交给外部（例如 AR 命中测试放置）直接设置内容的位置，
+   * 核心不再覆盖 root 的偏移。
+   */
+  setManualPlacement(enabled: boolean): void {
+    this.manualPlacement = enabled;
+    if (!enabled) this.applyPlacement();
   }
 
   /** 卸载当前场景并释放资源。 */
@@ -203,8 +216,32 @@ export class Stage {
     }
 
     const camera = instance?.camera ?? this.fallbackCamera;
+    this.syncListener(camera);
     this.renderer.render(this.hostScene, camera);
   };
+
+  /**
+   * 让空间音频监听器跟随当前相机。
+   * XR 下跟随头显（XR 相机第一视角），网页模式跟随自由相机。
+   */
+  private syncListener(camera: THREE.Camera): void {
+    const listener = this.listener;
+
+    if (this.renderer.xr.isPresenting) {
+      const xrCamera = this.renderer.xr.getCamera();
+      const view = xrCamera.cameras[0];
+      if (view) {
+        view.getWorldPosition(listener.position);
+        view.getWorldQuaternion(listener.quaternion);
+        listener.updateMatrixWorld(true);
+        return;
+      }
+    }
+
+    camera.getWorldPosition(listener.position);
+    camera.getWorldQuaternion(listener.quaternion);
+    listener.updateMatrixWorld(true);
+  }
 
   /** 更新视口尺寸（XR 会话中由 XR 管理器接管，不做处理）。 */
   resize(): void {

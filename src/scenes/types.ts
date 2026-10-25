@@ -1,4 +1,4 @@
-import type { Object3D, PerspectiveCamera, Texture, WebGLRenderer } from 'three';
+import type { Object3D, PerspectiveCamera, Texture, WebGLRenderer, AudioListener, Vector3 } from 'three';
 import type { AudioAnalysis } from '../core/audio-analysis.js';
 
 /**
@@ -42,6 +42,12 @@ export interface SceneContext {
    * 场景应当用这些值驱动自身的涨落与明暗，实现「3D 跟随音乐变换」。
    */
   readonly audio: AudioAnalysis;
+  /**
+   * 空间音频监听器：位置每帧跟随当前相机（XR 下是头显位置）。
+   * 场景可用 `new THREE.PositionalAudio(ctx.listener)` 把音源锚在场景里的某个位置，
+   * 用户转头时声音会从对应方向传来。
+   */
+  readonly listener: AudioListener;
 }
 
 /** 场景运行期实例。 */
@@ -54,6 +60,12 @@ export interface SceneInstance {
   update(time: number, delta: number, ctx: SceneContext): void;
   /** 释放几何体、材质、纹理等资源。 */
   dispose(): void;
+  /**
+   * 可选：XR 中用户捏合 / 拖拽时的交互钩子。
+   * 场景里把可抓取的对象标记为 `userData.pinchable = true`，
+   * 命中时 `info.hit` 为 true，`info.point` 是命中点（场景局部坐标）。
+   */
+  onPinch?(info: PinchInfo): void;
   /**
    * 环绕型场景：内容围绕用户展开（例如银河、隧道、极光）。
    * 为 true 时 XR 中不会把内容前移，用户站在内容之中。
@@ -86,8 +98,25 @@ export interface SceneFraming {
   width?: number;
 }
 
-/** 场景分类：程序化效果 / 模型材质 / 冥想 / 助眠 / 真实环境。 */
-export type SceneCategory = 'procedural' | 'model' | 'meditation' | 'sleep' | 'environment';
+/** 场景分类：程序化效果 / 模型材质 / 冥想 / 助眠 / 真实环境 / 模拟。 */
+export type SceneCategory = 'procedural' | 'model' | 'meditation' | 'sleep' | 'environment' | 'simulation';
+
+/**
+ * 捏合交互信息。
+ * 在 XR 中，用户的手（或手柄）捏合时会向场景派发这个结构。
+ */
+export interface PinchInfo {
+  /** 捏合阶段：开始 / 移动 / 结束。 */
+  phase: 'start' | 'move' | 'end';
+  /** 捏合强度（0~1）。 */
+  strength: number;
+  /** 命中点坐标（场景根节点局部空间）。 */
+  point: Vector3;
+  /** 手 / 控制器位置（场景根节点局部空间）。 */
+  hand: Vector3;
+  /** 是否命中了标记了 `userData.pinchable` 的对象。 */
+  hit: boolean;
+}
 
 /** 呼吸节奏，用于冥想场景的引导动画。 */
 export interface BreathingPattern {

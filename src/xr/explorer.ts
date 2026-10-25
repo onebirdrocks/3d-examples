@@ -1,10 +1,11 @@
 import * as THREE from 'three';
+import { XRHandModelFactory } from 'three/addons/webxr/XRHandModelFactory.js';
 import type { Stage } from '../core/stage.js';
 import type { AmbientAudio } from '../core/audio.js';
-import type { SceneDefinition } from '../scenes/types.js';
+import type { PinchInfo, SceneDefinition } from '../scenes/types.js';
 import { buildSceneWall, createNoticeTexture, type ScenePanel } from './wall.js';
 
-export type XrMode = 'wall' | 'scene';
+export type XrMode = 'wall' | 'scene' | 'ar';
 
 export interface XrExplorerOptions {
   stage: Stage;
@@ -13,6 +14,8 @@ export interface XrExplorerOptions {
   thumbnails: Map<string, string>;
   /** 可选的环境音播放器：进入沉浸场景时同步播放该场景的音乐。 */
   audio?: AmbientAudio;
+  /** AR 模式的 DOM 叠层根节点（用于显示操作提示）。 */
+  overlayRoot?: HTMLElement;
   onModeChange?: (mode: XrMode, scene: SceneDefinition | null) => void;
 }
 
@@ -32,6 +35,7 @@ export class XrExplorer {
   private readonly scenes: readonly SceneDefinition[];
   private readonly thumbnails: Map<string, string>;
   private readonly audio?: AmbientAudio;
+  private readonly overlayRoot?: HTMLElement;
   private readonly onModeChange?: (mode: XrMode, scene: SceneDefinition | null) => void;
 
   private session: XRSession | null = null;
@@ -47,27 +51,54 @@ export class XrExplorer {
   private mode: XrMode = 'wall';
   private activeScene: SceneDefinition | null = null;
 
+  /* 手部追踪与捏合 */
+  private readonly handFactory = new XRHandModelFactory();
+  private readonly handModels: THREE.Object3D[] = [];
+  private readonly pinching = new Set<unknown>();
+  private readonly pinchInfo: PinchInfo = {
+    phase: 'start',
+    strength: 0,
+    point: new THREE.Vector3(),
+    hand: new THREE.Vector3(),
+    hit: false,
+  };
+  private readonly pinchables: THREE.Object3D[] = [];
+  private pinchHit = false;
+  private readonly pinchPoint = new THREE.Vector3();
+  private readonly pinchHand = new THREE.Vector3();
+
+  /* AR 命中测试 */
+  private hitTestSource: XRHitTestSource | null = null;
+  private hitResult: XRHitTestResult | null = null;
+  private reticle: THREE.Mesh | null = null;
+  private arAnchor: XRAnchor | null = null;
+  private arPlaced = false;
+  private readonly arPosition = new THREE.Vector3();
+  private readonly arQuaternion = new THREE.Quaternion();
+
   private readonly raycaster = new THREE.Raycaster();
   private readonly tmpOrigin = new THREE.Vector3();
   private readonly tmpDir = new THREE.Vector3();
   private readonly tmpMatrix = new THREE.Matrix4();
   private readonly tmpQuat = new THREE.Quaternion();
+  private readonly tmpVector = new THREE.Vector3();
 
   constructor(options: XrExplorerOptions) {
     this.stage = options.stage;
     this.scenes = options.scenes;
     this.thumbnails = options.thumbnails;
     this.audio = options.audio;
+    this.overlayRoot = options.overlayRoot;
     this.onModeChange = options.onModeChange;
     this.stage.addFrameListener(this.update);
   }
 
-  /** 当前是否支持 immersive-vr。 */
-  static async isSupported(): Promise<boolean> {
+  /** 当前是否支持指定的沉浸模式。 */
+  static async isSupported(mode: 'immersive-vr' | 'immersive-ar' = 'immersive-vr'): Promise<boolean> {
     const xr = navigator.xr;
     if (!xr) return false;
     try {
-      return await xr.isSessionSupported('immersive-vr');
+      return await xr.isSessionSupported(mode);
     } catch {
       return false;
     }
@@ -92,6 +123,8 @@ export class XrExplorer {
     this.session = session;
     session.addEventListener('end', this.handleSessionEnd);
     session.addEventListener('select', this.handleSelect);
+    session.addEventListener('selectend', this.handleSelectEnd);
+    this.setupHandTracking();
 
     this.stage.hostScene.background = new THREE.Color(0x03050b);
     this.stage.setXRActive(true);
@@ -104,12 +137,183 @@ export class XrExplorer {
     }
   }
 
+  /**
+   * 接入 WebXR 手部追踪。
+   *
+   * three r186 会把每根手指的关节位姿写进 `renderer.xr.getHand(i).joints`，
+   * 并在拇指与食指尖靠拢时派发 pinchstart / pinchend —— 比 select 事件精确得多。
+   */
+  private setupHandTracking(): void {
+    const xrManager = this.stage.renderer.xr;
+
+    for (let i = 0; i < 2; i += 1) {
+      const hand = xrManager.getHand(i);
+      hand.add(this.handFactory.createHandModel(hand, 'spheres'));
+      this.stage.hostScene.add(hand);
+      this.handModels.push(hand);
+    }
+
+    // three r186 会派发 pinchstart / pinchend，但类型表里没收录，这里用宽松签名注册
+    const loose = xrManager as unknown as {
+      addEventListener(type: string, listener: (event: unknown) => void): void;
+    };
+    loose.addEventListener('pinchstart', this.handlePinchStart);
+    loose.addEventListener('pinchend', this.handlePinchEnd);
+  }
+
+  /**
+   * 进入 AR 模式：把场景放到用户真实空间里。
+   *
+   * 流程：请求 immersive-ar 会话（带 hit-test）→ 屏幕上出现一个贴合地面的
+   * 指示环 → 用户看向想放置的位置 → 捏合/点击即放置 → 场景锚定在真实空间中。
+   */
+  async enterAr(initial: SceneDefinition): Promise<void> {
+    const xr = navigator.xr;
+    if (!xr) throw new Error('当前浏览器不支持 WebXR');
+
+    const session = await xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: [
+        'local-floor',
+        'anchors',
+        'light-estimation',
+        'plane-detection',
+        'dom-overlay',
+      ],
+      ...(this.overlayRoot ? { domOverlay: { root: this.overlayRoot } } : {}),
+    });
+
+    await this.stage.renderer.xr.setSession(session);
+    this.session = session;
+    session.addEventListener('end', this.handleSessionEnd);
+    session.addEventListener('select', this.handleArSelect);
+    this.setupHandTracking();
+
+    const viewerSpace = await session.requestReferenceSpace('viewer');
+    if (typeof session.requestHitTestSource !== 'function') {
+      throw new Error('当前设备不支持命中测试（hit-test）');
+    }
+    const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+    if (!hitTestSource) throw new Error('当前设备不支持命中测试（hit-test）');
+    this.hitTestSource = hitTestSource;
+
+    this.mode = 'ar';
+    this.arPlaced = false;
+    this.createReticle();
+
+    // AR 下透出真实世界，不画背景
+    this.stage.hostScene.background = null;
+    this.stage.setXRActive(true);
+    this.stage.setManualPlacement(true);
+    this.stage.start();
+
+    await this.showScene(initial);
+  }
+
+  private createReticle(): void {
+    if (this.reticle) return;
+    const geometry = new THREE.RingGeometry(0.09, 0.13, 48);
+    geometry.rotateX(-Math.PI / 2);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x8fc4ff,
+      transparent: true,
+      opacity: 0.85,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const reticle = new THREE.Mesh(geometry, material);
+    reticle.name = 'ar-reticle';
+    reticle.renderOrder = 999;
+    reticle.visible = false;
+    this.stage.hostScene.add(reticle);
+    this.reticle = reticle;
+  }
+
+  /** 每帧更新命中测试结果与指示环位置。 */
+  private updateReticle(): void {
+    if (this.mode !== 'ar' || !this.hitTestSource || this.arPlaced) return;
+    const reticle = this.reticle;
+    if (!reticle) return;
+
+    const frame = this.stage.renderer.xr.getFrame();
+    const refSpace = this.stage.renderer.xr.getReferenceSpace();
+    if (!frame || !refSpace) return;
+
+    const results = frame.getHitTestResults(this.hitTestSource);
+    if (!results.length) {
+      reticle.visible = false;
+      return;
+    }
+
+    const result = results[0];
+    const pose = result.getPose(refSpace);
+    if (!pose) {
+      reticle.visible = false;
+      return;
+    }
+
+    this.tmpMatrix.fromArray(pose.transform.matrix);
+    this.arPosition.setFromMatrixPosition(this.tmpMatrix);
+    this.arQuaternion.setFromRotationMatrix(this.tmpMatrix);
+    reticle.position.copy(this.arPosition);
+    reticle.quaternion.copy(this.arQuaternion);
+    reticle.visible = true;
+    this.hitResult = result;
+  }
+
+  private readonly handleArSelect = async () => {
+    if (this.mode !== 'ar' || this.arPlaced) return;
+    const instance = this.stage.current;
+    const reticle = this.reticle;
+    if (!instance || !reticle || !reticle.visible) return;
+
+    instance.root.position.copy(this.arPosition);
+    instance.root.quaternion.copy(this.arQuaternion);
+    instance.root.visible = true;
+    this.arPlaced = true;
+    reticle.visible = false;
+
+    // 尽量创建锚点，让场景稳稳留在真实空间里
+    try {
+      const anchor = await this.hitResult?.createAnchor?.();
+      if (anchor) this.arAnchor = anchor;
+    } catch {
+      // 设备不支持锚点时忽略：位置仍然可用，只是不会跟随环境微调
+    }
+  };
+
+  /** 锚点存在时，让内容跟随锚点微调位置。 */
+  private updateAnchor(): void {
+    if (!this.arAnchor) return;
+    const frame = this.stage.renderer.xr.getFrame();
+    const refSpace = this.stage.renderer.xr.getReferenceSpace();
+    if (!frame || !refSpace) return;
+
+    const pose = frame.getPose(this.arAnchor.anchorSpace, refSpace);
+    if (!pose) return;
+    this.tmpMatrix.fromArray(pose.transform.matrix);
+    const instance = this.stage.current;
+    if (!instance) return;
+    instance.root.position.setFromMatrixPosition(this.tmpMatrix);
+    instance.root.quaternion.setFromRotationMatrix(this.tmpMatrix);
+  }
+
   private readonly handleSessionEnd = () => {
     this.session = null;
     this.clearWall();
     this.clearBackPanel();
+    this.clearReticle();
+    this.hitTestSource?.cancel?.();
+    this.hitTestSource = null;
+    this.hitResult = null;
+    this.arAnchor = null;
+    this.arPlaced = false;
+    this.pinching.clear();
+    this.pinchHit = false;
+    this.pinchables.length = 0;
     this.stage.unmount();
     this.stage.setXRActive(false);
+    this.stage.setManualPlacement(false);
     this.stage.hostScene.background = null;
     this.audio?.stop();
     this.mode = 'wall';
@@ -132,6 +336,18 @@ export class XrExplorer {
     this.tmpQuat.setFromRotationMatrix(this.tmpMatrix);
     this.tmpDir.set(0, 0, -1).applyQuaternion(this.tmpQuat).normalize();
 
+    // 场景模式：先把捏合派发给场景（场景内可交互对象优先）
+    if (this.mode === 'scene' && this.activeScene) {
+      const hit = this.pickPinchable(this.tmpOrigin, this.tmpDir);
+      if (hit) {
+        this.pinchHit = true;
+        this.pinchPoint.copy(hit);
+        this.pinching.add(source);
+        this.dispatchPinch('start');
+        return;
+      }
+    }
+
     // 场景模式下优先命中「返回场景墙」
     if (this.mode === 'scene' && this.backPanel) {
       this.raycaster.set(this.tmpOrigin, this.tmpDir);
@@ -150,6 +366,96 @@ export class XrExplorer {
 
     if (this.hovered) this.activate(this.hovered);
   };
+
+  private readonly handleSelectEnd = (event: XRInputSourceEvent) => {
+    if (!this.pinching.has(event.inputSource)) return;
+    this.pinching.delete(event.inputSource);
+    this.dispatchPinch('end');
+  };
+
+  /* ---------------- 手部捏合 ---------------- */
+
+  private readonly handlePinchStart = () => {
+    this.pinching.add('hand');
+    this.dispatchPinch('start');
+  };
+
+  private readonly handlePinchEnd = () => {
+    this.pinching.delete('hand');
+    this.dispatchPinch('end');
+  };
+
+  /** 每帧更新捏合中的手部位置并派发 move。 */
+  private updatePinch(): void {
+    if (this.pinching.size === 0) return;
+
+    const instance = this.stage.current;
+    if (!instance?.onPinch) return;
+
+    const root = instance.root;
+    root.updateWorldMatrix(true, false);
+
+    // 捏合点 = 拇指尖与食指尖的中点
+    const hand = this.stage.renderer.xr.getHand(0);
+    const thumb = hand.joints?.['thumb-tip'];
+    const index = hand.joints?.['index-finger-tip'];
+
+    if (thumb && index) {
+      thumb.getWorldPosition(this.tmpVector);
+      index.getWorldPosition(this.pinchHand);
+      this.tmpVector.add(this.pinchHand).multiplyScalar(0.5);
+      this.pinchHand.copy(this.tmpVector);
+    } else {
+      return;
+    }
+
+    // 从相机朝捏合点发射射线，找到可交互对象
+    const camera = this.stage.renderer.xr.getCamera();
+    camera.getWorldPosition(this.tmpOrigin);
+    this.tmpDir.copy(this.pinchHand).sub(this.tmpOrigin).normalize();
+
+    const hit = this.pickPinchable(this.tmpOrigin, this.tmpDir);
+    this.pinchHit = hit !== null;
+    if (hit) this.pinchPoint.copy(hit);
+
+    this.dispatchPinch('move');
+  }
+
+  /** 找出场景里标记了 userData.pinchable 的对象中被射线命中的那个。 */
+  private pickPinchable(origin: THREE.Vector3, dir: THREE.Vector3): THREE.Vector3 | null {
+    const instance = this.stage.current;
+    if (!instance) return null;
+
+    if (this.pinchables.length === 0) {
+      this.pinchables.length = 0;
+      instance.root.traverse((child) => {
+        if (child.userData.pinchable) this.pinchables.push(child);
+      });
+    }
+    if (this.pinchables.length === 0) return null;
+
+    this.raycaster.set(origin, dir);
+    this.raycaster.far = 20;
+    const hits = this.raycaster.intersectObjects(this.pinchables, true);
+    if (!hits.length) return null;
+
+    const point = hits[0].point.clone();
+    instance.root.worldToLocal(point);
+    return point;
+  }
+
+  /** 把捏合信息派发给当前场景。 */
+  private dispatchPinch(phase: 'start' | 'move' | 'end'): void {
+    const instance = this.stage.current;
+    if (!instance?.onPinch) return;
+
+    this.pinchInfo.phase = phase;
+    this.pinchInfo.strength = phase === 'end' ? 0 : 1;
+    this.pinchInfo.hit = this.pinchHit;
+    this.pinchInfo.point.copy(this.pinchPoint);
+    this.pinchInfo.hand.copy(this.pinchHand);
+    instance.onPinch(this.pinchInfo);
+  }
 
   /** 切回场景墙。 */
   showWall(): void {
@@ -190,6 +496,8 @@ export class XrExplorer {
     try {
       const instance = await def.create(this.stage.context);
       this.stage.mount(instance);
+      // AR 模式下先藏起来，等用户选好位置再显示
+      if (this.mode === 'ar') instance.root.visible = false;
       this.createBackPanel(def);
       await this.playSceneAudio(def);
     } catch (error) {
@@ -237,9 +545,14 @@ export class XrExplorer {
 
     if (this.mode === 'wall') {
       this.updateHover(delta);
+    } else if (this.mode === 'ar') {
+      this.updateReticle();
+      this.updateAnchor();
     } else if (this.activeScene) {
       this.updateBackPanelHover();
     }
+
+    this.updatePinch();
   };
 
   private updateHover(delta: number): void {
@@ -388,6 +701,14 @@ export class XrExplorer {
     this.backPanel.geometry.dispose();
     (this.backPanel.material as THREE.Material).dispose();
     this.backPanel = null;
+  }
+
+  private clearReticle(): void {
+    if (!this.reticle) return;
+    this.stage.hostScene.remove(this.reticle);
+    this.reticle.geometry.dispose();
+    (this.reticle.material as THREE.Material).dispose();
+    this.reticle = null;
   }
 
   private clearWall(): void {

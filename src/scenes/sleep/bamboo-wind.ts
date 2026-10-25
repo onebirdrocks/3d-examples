@@ -15,7 +15,8 @@
  */
 import * as THREE from 'three';
 import type { SceneContext, SceneDefinition, SceneInstance } from '../types.js';
-import { disposeObject } from '../../core/loader.js';
+import { disposeObject, assetUrl } from '../../core/loader.js';
+import { attachSpatialSource } from '../../core/spatial-audio.js';
 import { GLSL_DITHER, GLSL_HASH, GLSL_NOISE2, GLSL_NOISE3, GLSL_OUTPUT, GLSL_OUTPUT_FUNCS } from './glsl.js';
 import { SLEEP_CATEGORY, configureStandard, dimLights } from './palette.js';
 import { SleepAudioDrive } from './audio-drive.js';
@@ -609,6 +610,15 @@ function createBambooWind(ctx: SceneContext): SceneInstance {
   moon.position.set(4, 7, 6);
   root.add(moon);
 
+  // ── 空间音源：竹叶的沙沙声从林子深处传来 ────────────────────────
+  const wind = attachSpatialSource(root, ctx.listener, {
+    url: assetUrl('audio/sfx-wind.mp3'),
+    position: [-1.8, 2.4, -2.6],
+    volume: 0.4,
+    refDistance: 3,
+    maxDistance: 40,
+  });
+
   const audio = new SleepAudioDrive(BREATHING);
 
   return {
@@ -650,6 +660,8 @@ function createBambooWind(ctx: SceneContext): SceneInstance {
       moon.intensity = 0.12 + state.level * 0.1;
     },
     dispose(): void {
+      wind.stop();
+      wind.disconnect();
       disposeObject(root);
     },
   };

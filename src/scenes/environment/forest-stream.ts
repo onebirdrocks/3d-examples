@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SceneContext, SceneDefinition, SceneInstance } from '../types.js';
-import { disposeObject } from '../../core/loader.js';
+import { disposeObject, assetUrl } from '../../core/loader.js';
+import { attachSpatialSource } from '../../core/spatial-audio.js';
 import {
   AudioDriver,
   GLSL_HASH,
@@ -662,6 +663,15 @@ function createForestStream(ctx: SceneContext): SceneInstance {
   const ambient = new THREE.HemisphereLight(0xc2d8e0, 0x4a4a3a, 0.45);
   root.add(ambient);
 
+  // ── 空间音源：溪水声从画面左侧的溪流处传来 ──────────────────────
+  const stream = attachSpatialSource(root, ctx.listener, {
+    url: assetUrl('audio/sfx-stream.mp3'),
+    position: [-1.6, 0.35, 0.4],
+    volume: 0.45,
+    refDistance: 2.2,
+    maxDistance: 30,
+  });
+
   return {
     root,
     camera,
@@ -702,6 +712,8 @@ function createForestStream(ctx: SceneContext): SceneInstance {
       bankMaterial.envMapIntensity = 0.06 + level * 0.05;
     },
     dispose(): void {
+      stream.stop();
+      stream.disconnect();
       floorTexture.dispose();
       fernTexture.dispose();
       mistTexture.dispose();

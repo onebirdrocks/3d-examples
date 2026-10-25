@@ -18,6 +18,8 @@ const tagsEl = document.querySelector<HTMLElement>('#scene-tags')!;
 const loadingEl = document.querySelector<HTMLElement>('#loading')!;
 const selectEl = document.querySelector<HTMLSelectElement>('#scene-select')!;
 const xrButton = document.querySelector<HTMLButtonElement>('#enter-xr')!;
+const arButton = document.querySelector<HTMLButtonElement>('#enter-ar')!;
+const arOverlay = document.querySelector<HTMLElement>('#ar-overlay')!;
 const banner = document.querySelector<HTMLElement>('#xr-banner')!;
 const audioCtl = document.querySelector<HTMLElement>('#audio-ctl')!;
 const soundToggle = document.querySelector<HTMLButtonElement>('#sound-toggle')!;
@@ -172,7 +174,10 @@ soundToggle.addEventListener('click', async () => {
 });
 
 volumeEl.addEventListener('input', () => {
-  audio.setVolume(Number(volumeEl.value) / 100);
+  const value = Number(volumeEl.value) / 100;
+  audio.setVolume(value);
+  // 空间音源（场景里的定向声源）走 listener 的主音量
+  stage.listener.setMasterVolume(value);
 });
 
 function step(direction: 1 | -1): void {
@@ -221,34 +226,57 @@ window.addEventListener('keydown', (event) => {
 
 /* ---------------- WebXR ---------------- */
 
+function ensureExplorer(): XrExplorer {
+  if (!explorer) {
+    explorer = new XrExplorer({
+      stage,
+      scenes: SCENES,
+      thumbnails: new Map(),
+      audio,
+      overlayRoot: arOverlay,
+      onModeChange: (mode, scene) => {
+        arOverlay.hidden = mode !== 'ar';
+        banner.textContent =
+          mode === 'scene' && scene
+            ? `沉浸浏览中 · ${scene.title}　（捏合选择其他场景，或点击右下角返回场景墙）`
+            : mode === 'ar'
+              ? 'AR 放置模式 · 移动视线找到平面，捏合放置'
+              : '沉浸浏览中 · 场景墙　（环视四周，捏合选择场景）';
+        banner.classList.add('is-visible');
+      },
+    });
+  }
+  return explorer;
+}
+
 void (async () => {
   const secure = window.isSecureContext;
-  const supported = secure && (await XrExplorer.isSupported());
-  if (supported) return;
-  xrButton.disabled = true;
-  xrButton.title = secure
-    ? '当前设备不支持 immersive-vr（请在 Vision Pro 的 Safari 中打开）'
-    : 'WebXR 需要 HTTPS 或 localhost 环境';
+  const [vr, ar] = secure
+    ? await Promise.all([
+        XrExplorer.isSupported('immersive-vr'),
+        XrExplorer.isSupported('immersive-ar'),
+      ])
+    : [false, false];
+
+  if (!vr) {
+    xrButton.disabled = true;
+    xrButton.title = secure
+      ? '当前设备不支持 immersive-vr（请在 Vision Pro 的 Safari 中打开）'
+      : 'WebXR 需要 HTTPS 或 localhost 环境';
+  }
+
+  if (!ar) {
+    arButton.disabled = true;
+    arButton.title = secure
+      ? '当前设备不支持 immersive-ar 命中测试'
+      : 'AR 放置需要 HTTPS 环境';
+  }
 })();
 
 xrButton.addEventListener('click', async () => {
   xrButton.disabled = true;
   try {
-    if (!explorer) {
-      explorer = new XrExplorer({
-        stage,
-        scenes: SCENES,
-        thumbnails: new Map(),
-        onModeChange: (mode, scene) => {
-          banner.textContent =
-            mode === 'scene' && scene
-              ? `沉浸浏览中 · ${scene.title}　（捏合选择其他场景，或点击右下角返回场景墙）`
-              : '沉浸浏览中 · 场景墙　（环视四周，捏合选择场景）';
-          banner.classList.add('is-visible');
-        },
-      });
-    }
-    await explorer.enter(current ?? undefined);
+    await ensureExplorer().enter(current ?? undefined);
   } catch (error) {
     console.error('[viewer] 沉浸会话启动失败', error);
     banner.textContent = `沉浸模式启动失败：${error instanceof Error ? error.message : String(error)}`;
@@ -258,7 +286,22 @@ xrButton.addEventListener('click', async () => {
   }
 });
 
+arButton.addEventListener('click', async () => {
+  arButton.disabled = true;
+  try {
+    if (!current) throw new Error('请先选择一个场景');
+    await ensureExplorer().enterAr(current);
+  } catch (error) {
+    console.error('[viewer] AR 放置启动失败', error);
+    banner.textContent = `AR 放置启动失败：${error instanceof Error ? error.message : String(error)}`;
+    banner.classList.add('is-visible');
+  } finally {
+    arButton.disabled = false;
+  }
+});
+
 window.addEventListener('xr-sessionended', () => {
+  arOverlay.hidden = true;
   banner.classList.remove('is-visible');
   // 会话结束后恢复网页模式的场景与轨道控制
   if (current) void switchTo(current.id);

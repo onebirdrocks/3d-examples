@@ -28,6 +28,7 @@ export class ThumbnailBaker {
   private readonly quality: number;
   private readonly warmupFrames: number;
   private readonly analysis = new AudioAnalysis();
+  private readonly listener = new THREE.AudioListener();
 
   constructor(options: ThumbnailOptions = {}) {
     const width = options.width ?? 640;
@@ -72,6 +73,7 @@ export class ThumbnailBaker {
       width: Math.max(1, Math.floor(size.x)),
       height: Math.max(1, Math.floor(size.y)),
       audio: this.analysis,
+      listener: this.listener,
     };
   }
 

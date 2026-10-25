@@ -11,6 +11,7 @@
  * 抛出错误，由界面提示用户点击开启。
  */
 
+import * as THREE from 'three';
 import type { AudioAnalysis } from './audio-analysis.js';
 
 export interface AmbientAudioOptions {
@@ -159,22 +160,22 @@ export class AmbientAudio {
 
   private ensureContext(): AudioContext {
     if (this.context) return this.context;
-    const Ctor: typeof AudioContext =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    this.context = new Ctor();
-    this.master = this.context.createGain();
+    // 与 three 的 AudioListener / PositionalAudio 共用同一个原生 AudioContext，
+    // 避免双上下文带来的额外开销与不同步。
+    const context = THREE.AudioContext.getContext() as unknown as AudioContext;
+    this.context = context;
+    this.master = context.createGain();
     this.master.gain.value = 0.0001;
 
     // 频谱分析接在主音量之后，场景据此驱动画面
-    this.analyser = this.context.createAnalyser();
+    this.analyser = context.createAnalyser();
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.72;
     this.master.connect(this.analyser);
-    this.analyser.connect(this.context.destination);
+    this.analyser.connect(context.destination);
     this.analysis?.attach(this.analyser);
 
-    return this.context;
+    return context;
   }
 
   private setMasterGain(value: number): void {

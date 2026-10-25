@@ -592,6 +592,25 @@ main {
   color: var(--text-dim);
 }
 
+.site-footer__links {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.site-footer__links a {
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 1px;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.site-footer__links a:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
 /* ---------- 响应式 ---------- */
 
 @media (max-width: 720px) {

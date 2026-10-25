@@ -28,6 +28,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   meditation: 'Meditation',
   sleep: 'Sleep',
   environment: 'Ambient',
+  simulation: 'Simulation',
 };
 
 function buildCard(def: SceneDefinition, index: number): HTMLElement {

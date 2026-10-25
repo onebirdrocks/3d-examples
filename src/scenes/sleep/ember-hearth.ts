@@ -13,7 +13,8 @@
  */
 import * as THREE from 'three';
 import type { SceneContext, SceneDefinition, SceneInstance } from '../types.js';
-import { disposeObject } from '../../core/loader.js';
+import { disposeObject, assetUrl } from '../../core/loader.js';
+import { attachSpatialSource } from '../../core/spatial-audio.js';
 import { ParticleSpace } from '../../core/particle-space.js';
 import { GLSL_HASH, GLSL_NOISE2, GLSL_NOISE3, GLSL_OUTPUT, GLSL_OUTPUT_FUNCS } from './glsl.js';
 import { SLEEP_CATEGORY, configureStandard, dimLights } from './palette.js';
@@ -350,6 +351,15 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
   hearthBase.receiveShadow = true;
   root.add(hearthBase);
 
+  // ── 空间音源：炉火噼啪声从炉膛里传来 ────────────────────────────
+  const crackle = attachSpatialSource(root, ctx.listener, {
+    url: assetUrl('audio/sfx-fire.mp3'),
+    position: [0, 0.62, 0],
+    volume: 0.4,
+    refDistance: 1.4,
+    maxDistance: 22,
+  });
+
   // 炉膛：只在炉台后面留出一个凹进去的暗腔，正面完全敞开给火
   const cavityMaterial = new THREE.MeshStandardMaterial({
     color: 0x0a0605,
@@ -587,6 +597,8 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
       fireLight.position.y = HEARTH_Y + 0.04 + pulse * 0.03;
     },
     dispose(): void {
+      crackle.stop();
+      crackle.disconnect();
       disposeObject(root);
     },
   };

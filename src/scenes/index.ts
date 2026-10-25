@@ -8,6 +8,10 @@ import auroraScene from './procedural/aurora.js';
 import terrainScene from './procedural/terrain.js';
 import stainedglassScene from './procedural/stainedglass.js';
 import firefliesScene from './procedural/fireflies.js';
+import gpuTideScene from './procedural/gpu-tide.js';
+import metaballScene from './procedural/metaball.js';
+import neonPipelineScene from './procedural/neon-pipeline.js';
+import crystalCaveScene from './procedural/crystal-cave.js';
 
 import materialLabScene from './models/material-lab.js';
 import cityScene from './models/city.js';
@@ -36,6 +40,8 @@ import seaCliffScene from './environment/sea-cliff.js';
 import snowfieldScene from './environment/snowfield.js';
 import desertNightScene from './environment/desert-night.js';
 
+import silkDrapeScene from './simulation/silk-drape.js';
+
 /** 全部场景，按画廊展示顺序排列。 */
 export const SCENES: readonly SceneDefinition[] = [
   volumetricScene,
@@ -46,6 +52,10 @@ export const SCENES: readonly SceneDefinition[] = [
   terrainScene,
   stainedglassScene,
   firefliesScene,
+  gpuTideScene,
+  metaballScene,
+  neonPipelineScene,
+  crystalCaveScene,
   materialLabScene,
   cityScene,
   robotScene,
@@ -69,6 +79,7 @@ export const SCENES: readonly SceneDefinition[] = [
   seaCliffScene,
   snowfieldScene,
   desertNightScene,
+  silkDrapeScene,
 ];
 
 export const SCENE_CATEGORIES = [
@@ -78,6 +89,7 @@ export const SCENE_CATEGORIES = [
   { id: 'meditation', label: '冥想' },
   { id: 'sleep', label: '助眠' },
   { id: 'environment', label: '真实环境' },
+  { id: 'simulation', label: '模拟' },
 ] as const;
 
 export function getSceneById(id: string): SceneDefinition | undefined {

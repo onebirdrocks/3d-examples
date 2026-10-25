@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>WebGPU · TSL 流光表面 · Lumen Atlas</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #05060a; overflow: hidden; }
+      body { font: 500 13px/1.6 ui-sans-serif, -apple-system, "PingFang SC", sans-serif; color: #cfe0ff; }
+
+      #stage { position: fixed; inset: 0; }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+
+      #bar {
+        position: fixed; left: 0; right: 0; top: 0; z-index: 10;
+        display: flex; align-items: flex-start; gap: 14px;
+        padding: 16px 18px; pointer-events: none;
+      }
+      .back {
+        pointer-events: auto;
+        display: inline-block; padding: 7px 13px; border-radius: 999px;
+        text-decoration: none; color: #dfe9ff; font-weight: 600;
+        background: rgba(10, 14, 24, .72); border: 1px solid rgba(120, 170, 255, .26);
+        backdrop-filter: blur(12px);
+      }
+      .back:hover { border-color: rgba(150, 200, 255, .55); }
+      #titles { pointer-events: none; }
+      #titles h1 { margin: 0; font-size: 15px; letter-spacing: .02em; color: #fff; }
+      #titles p { margin: 3px 0 0; font-size: 12px; color: #7f93b8; }
+
+      #panel {
+        position: fixed; left: 18px; bottom: 18px; z-index: 10; width: min(340px, calc(100vw - 36px));
+        padding: 14px 16px; border-radius: 14px;
+        background: rgba(8, 12, 22, .74); border: 1px solid rgba(120, 170, 255, .22);
+        backdrop-filter: blur(14px);
+      }
+      #panel label { display: flex; justify-content: space-between; align-items: baseline; font-weight: 600; color: #fff; }
+      #panel label span { color: #9fd8ff; font-variant-numeric: tabular-nums; }
+      #intensity { width: 100%; margin: 10px 0 4px; accent-color: #7cc6ff; }
+      .tip { margin: 6px 0 0; font-size: 12px; color: #7f93b8; }
+      .tip code, code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; color: #bcd4ff; }
+      #status { margin: 10px 0 0; font-size: 12px; color: #8ff0c4; }
+      #status.warn { color: #ffc27a; }
+      #status.error { color: #ff9d9d; }
+
+      #notice {
+        position: fixed; inset: 0; z-index: 20; display: grid; place-content: center;
+        padding: 32px; text-align: center; background: rgba(5, 6, 10, .9);
+      }
+      #notice[hidden] { display: none; }
+      #notice h2 { margin: 0 0 10px; font-size: 19px; color: #ffd9a0; }
+      #notice p { margin: 0 auto; max-width: 520px; color: #c3d3ee; }
+      #notice pre { margin: 14px auto 0; max-width: 640px; text-align: left; font-size: 11px; color: #ff9d9d; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <div id="bar">
+      <a class="back" href="./index.html">← 返回画廊</a>
+      <div id="titles">
+        <h1>WebGPU · TSL 流光表面</h1>
+        <p>独立页面：<code>WebGPURenderer</code> + <code>three/tsl</code> 节点材质</p>
+      </div>
+    </div>
+
+    <aside id="panel">
+      <label for="intensity">强度 <span id="intensity-value">1.00</span></label>
+      <input id="intensity" type="range" min="0" max="2" step="0.01" value="1" />
+      <p class="tip">滑块写进 TSL 的 <code>uniform()</code>，实时改变流速、顶点起伏与辉光强度。</p>
+      <p id="status">正在初始化 WebGPU…</p>
+    </aside>
+
+    <div id="notice" hidden>
+      <div>
+        <h2 id="notice-title">当前浏览器不支持 WebGPU</h2>
+        <p id="notice-body">请使用 Safari 18+ 或 Chrome 113+ 打开本页。</p>
+        <pre id="notice-detail"></pre>
+      </div>
+    </div>
+
+    <script type="module" src="/src/webgpu.ts"></script>
+  </body>
+</html>

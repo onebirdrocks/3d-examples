@@ -66,6 +66,7 @@
               aria-label="环境音音量"
             />
           </div>
+          <button class="btn btn--ghost" id="enter-ar" disabled>放到真实空间</button>
           <button class="btn btn--primary" id="enter-xr" disabled>沉浸模式</button>
         </div>
       </div>
@@ -108,6 +109,14 @@
       <div class="viewer__loading" id="loading">
         <div class="spinner"></div>
         <span>正在生成场景</span>
+      </div>
+    </div>
+
+    <div class="xr-overlay" id="ar-overlay" hidden>
+      <div class="xr-overlay__card">
+        <strong>把场景放进真实空间</strong>
+        <span>缓慢移动视线，找到地面或桌面，出现蓝色圆环后捏合 / 点击即可放置。</span>
+        <span class="xr-overlay__hint">退出沉浸模式可返回网页</span>
       </div>
     </div>
 

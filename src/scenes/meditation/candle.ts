@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SceneContext, SceneDefinition, SceneInstance } from '../types.js';
-import { disposeObject } from '../../core/loader.js';
+import { disposeObject, assetUrl } from '../../core/loader.js';
+import { attachSpatialSource } from '../../core/spatial-audio.js';
 import { ParticleSpace, wrapParticleField } from '../../core/particle-space.js';
 import { createBreathSample, sampleBreath } from './lib/breath.js';
 import {
@@ -260,6 +261,16 @@ function createCandle(ctx: SceneContext): SceneInstance {
   dimStudioLights(lights, 0.04, 0x40342c);
   root.add(lights);
 
+  // ── 空间音源：火焰的噼啪声从蜡烛所在方位传来 ──────────────────────
+  // 戴上 Vision Pro 转头时，噼啪声会从蜡烛的方向响起。
+  const crackle = attachSpatialSource(root, ctx.listener, {
+    url: assetUrl('audio/sfx-fire.mp3'),
+    position: [0, 0.92, 0],
+    volume: 0.35,
+    refDistance: 1.6,
+    maxDistance: 24,
+  });
+
   // ── 墙上的暖色光晕 ────────────────────────────────────────────────────
   const glowTexture = createRadialGlowTexture(128, 2.4);
   const glowMaterial = new THREE.MeshBasicMaterial({
@@ -341,6 +352,8 @@ function createCandle(ctx: SceneContext): SceneInstance {
       backdrop.uniforms.uBreath.value = level;
     },
     dispose(): void {
+      crackle.stop();
+      crackle.disconnect();
       glowTexture.dispose();
       disposeObject(root);
     },

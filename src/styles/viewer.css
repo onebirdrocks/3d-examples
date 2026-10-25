@@ -310,6 +310,49 @@
   }
 }
 
+/* ---------- AR 叠层提示 ---------- */
+
+.xr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: end center;
+  padding: 0 0 46px;
+  pointer-events: none;
+}
+
+.xr-overlay[hidden] {
+  display: none;
+}
+
+.xr-overlay__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+  padding: 14px 20px;
+  border-radius: 16px;
+  background: rgba(8, 11, 20, 0.74);
+  border: 1px solid rgba(150, 190, 255, 0.2);
+  backdrop-filter: blur(14px);
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.xr-overlay__card strong {
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.xr-overlay__hint {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
 /* ---------- 沉浸模式提示条 ---------- */
 
 .xr-banner {
