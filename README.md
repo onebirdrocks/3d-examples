@@ -130,6 +130,8 @@ WebXR 只在**安全上下文**（HTTPS 或 localhost）可用。Vision Pro 的 
 - **真实平面贴合**：`XRPlanes` 识别你真实的桌面 / 墙面，内容贴着那个平面站
 - **持久锚点**：`requestPersistentHandle()` + localStorage —— 场景放进房间后，**下次打开仍在原位**，自动恢复
 
+真机核对清单见 [`docs/vision-pro-checklist.md`](docs/vision-pro-checklist.md) —— 渲染、空间音频方位、手部骨架、AR 放置、持久锚点、平面贴合、分层混音逐项打勾。
+
 ### 已知限制
 
 - **光估计（light-estimation）尚未接入**。已在会话里请求该能力，但 three 的 `XREstimatedLight` 依赖非标准调用，Web 端是否真能拿到数据需要真机确认后再决定是否投入。
