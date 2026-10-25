@@ -2,7 +2,7 @@
 
 一个可浏览 **3D 实时效果**的画廊：**同一套代码**同时跑在普通浏览器与 **Apple Vision Pro**（WebXR `immersive-vr` / `immersive-ar`）上。
 
-39 个场景，分五类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
+46 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
 
 ---
 
@@ -16,7 +16,7 @@ npm run preview   # 预览构建产物 http://localhost:4173
 npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑屏
 ```
 
-`npm run verify` 需要本机装有 Chrome 或 Chromium（不额外下载浏览器）。
+`npm run verify` 需要本机装有 Chrome 或 Chromium（不额外下载浏览器）。它会逐个打开全部场景，检查控制台报错、错误面板与画面是否全黑 —— GitHub Actions 上每次 push 都会自动跑一遍。
 
 | 页面 | 用途 |
 | --- | --- |
@@ -27,7 +27,7 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 
 ---
 
-## 场景清单（39）
+## 场景清单（46）
 
 ### 程序化效果（12）
 `volumetric` 体积光 · `galaxy` 星河漩涡 · `fluid` 流光水面 · `tunnel` 无限隧道 · `aurora` 极光夜空 · `terrain` 云海群山 · `stainedglass` 琉璃彩窗 · `fireflies` 萤火微光 · `gpu-tide` GPU 粒子潮汐 · `metaball` 熔核等值面 · `neon-pipeline` 霓虹雨夜 · `crystal-cave` SDF 晶体洞穴
@@ -38,11 +38,11 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 ### 冥想（6）
 `breathing` 呼吸之光 · `raindow` 雨夜窗 · `zenstones` 禅石 · `candle` 烛火 · `tides` 夜潮 · `mandala` 万象
 
-### 助眠（6）
-`void-drift` 虚空漂流 · `snowfall` 落雪夜 · `ember-hearth` 壁炉余烬 · `fog-lighthouse` 雾中灯塔 · `bamboo-wind` 竹林夜风 · `tide-cave` 洞穴潮汐
+### 助眠（10）
+`void-drift` 虚空漂流 · `snowfall` 落雪夜 · `ember-hearth` 壁炉余烬 · `fog-lighthouse` 雾中灯塔 · `bamboo-wind` 竹林夜风 · `tide-cave` 洞穴潮汐 · `deep-void` 深海之眼 · `moon-well` 月井 · `paper-lanterns` 孔明灯 · `sand-fall` 沙漏
 
-### 真实环境（7）
-`rainy-street` 雨夜街道 · `forest-stream` 林间溪流 · `sea-cliff` 海崖听涛 · `snowfield` 旷野风声 · `desert-night` 沙漠星夜 · `tea-room` 和风茶室 · `planetarium` 星象仪
+### 真实环境（10）
+`rainy-street` 雨夜街道 · `forest-stream` 林间溪流 · `sea-cliff` 海崖听涛 · `snowfield` 旷野风声 · `desert-night` 沙漠星夜 · `tea-room` 和风茶室 · `planetarium` 星象仪 · `misty-pines` 雾松林 · `harbor-dusk` 港湾黄昏 · `rice-terrace` 梯田晨光
 
 ### 模拟（2）
 `silk-drape` 悬垂绸缎 · `piano-ruins` 废墟里的钢琴
@@ -114,26 +114,26 @@ WebXR 只在**安全上下文**（HTTPS 或 localhost）可用。Vision Pro 的 
 ```
 src/
   core/        核心运行时：舞台 / 环境 / 取景 / 音频 / 粒子空间 / 光照装置
-  scenes/      39 个场景，按分类分目录；types.ts 是场景契约
+  scenes/      46 个场景，按分类分目录；types.ts 是场景契约
   ui/          呼吸引导
   xr/          WebXR：空间墙、探索器（沉浸 / AR）、手部骨架
   styles/      样式
 scripts/       场景回归检查
 public/
-  audio/       15 首配乐（mp3，由 MiniMax 生成）
+  audio/       25 首配乐（mp3，由 MiniMax 生成）
   models/      glTF 模型素材
 ```
 
 ### 加一个场景
 
-在 `src/scenes/<分类>/<id>.ts` 里导出一个 `SceneDefinition`，然后到 `src/scenes/index.ts` 注册。契约见 `src/scenes/types.ts`：`create(ctx)` 返回一个 `SceneInstance`，需要实现 `update(time, delta, ctx)` 与 `dispose()`。
+在 `src/scenes/<分类>/<id>.ts` 里导出一个 `SceneDefinition`，然后到 `src/scenes/index.ts` 注册。注册后 `npm run verify` 会把它纳入自动检查。契约见 `src/scenes/types.ts`：`create(ctx)` 返回一个 `SceneInstance`，需要实现 `update(time, delta, ctx)` 与 `dispose()`。
 
 ---
 
 ## 致谢与素材
 
 - 模型素材来自 [three.js 官方示例仓库](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf)：`RobotExpressive.glb`、`DamagedHelmet`
-- 全部配乐由 MiniMax 音乐生成模型创作
+- 全部 25 首配乐由 MiniMax 音乐生成模型创作（含 Enigma 风格的圣咏质感曲目）
 
 ## License
 

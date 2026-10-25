@@ -45,6 +45,15 @@ import planetariumScene from './environment/planetarium.js';
 import silkDrapeScene from './simulation/silk-drape.js';
 import pianoRuinsScene from './simulation/piano-ruins.js';
 
+import deepVoidScene from './sleep/deep-void.js';
+import moonWellScene from './sleep/moon-well.js';
+import paperLanternsScene from './sleep/paper-lanterns.js';
+import sandFallScene from './sleep/sand-fall.js';
+
+import mistyPinesScene from './environment/misty-pines.js';
+import harborDuskScene from './environment/harbor-dusk.js';
+import riceTerraceScene from './environment/rice-terrace.js';
+
 /** 全部场景，按画廊展示顺序排列。 */
 export const SCENES: readonly SceneDefinition[] = [
   volumetricScene,
@@ -86,6 +95,13 @@ export const SCENES: readonly SceneDefinition[] = [
   planetariumScene,
   silkDrapeScene,
   pianoRuinsScene,
+  deepVoidScene,
+  moonWellScene,
+  paperLanternsScene,
+  sandFallScene,
+  mistyPinesScene,
+  harborDuskScene,
+  riceTerraceScene,
 ];
 
 export const SCENE_CATEGORIES = [
