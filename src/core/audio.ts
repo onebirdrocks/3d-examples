@@ -87,6 +87,12 @@ export class AmbientAudio {
   private buffers = new Map<string, AudioBuffer>();
   private currentPath: string | null = null;
   private active: { source: AudioBufferSourceNode; gain: GainNode; timer: number } | null = null;
+  /** 播放列表：多首曲目首尾相接交叉淡化，可以撑起很长的不重复体验。 */
+  private playlist: string[] = [];
+  private playlistBuffers: AudioBuffer[] = [];
+  private playlistIndex = 0;
+  private breathFilter: BiquadFilterNode | null = null;
+  private breathGain: GainNode | null = null;
   private readonly options: Required<AmbientAudioOptions>;
   private volume = 0.55;
 
@@ -124,21 +130,41 @@ export class AmbientAudio {
 
   /**
    * 播放指定音频（相对站点根路径，例如 'audio/rain-window.mp3'）。
+   *
+   * 也可以传一个数组：多首曲目会首尾相接、交叉淡化连续播放，
+   * 用几段素材就能撑起十分钟以上不重复的冥想声景。
+   *
    * 同一首重复调用不会重启；换曲会做交叉过渡。
    */
-  async play(path: string): Promise<void> {
+  async play(pathOrPaths: string | string[]): Promise<void> {
     const context = this.ensureContext();
     if (context.state === 'suspended') {
-      await context.resume();
+      // 被自动播放策略挡住时 resume() 可能一直 pending，不能无限等它 ——
+      // 否则后面的缓冲区加载全部卡住，音频永远不 ready。
+      await Promise.race([
+        context.resume().catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 300)),
+      ]);
     }
 
-    const buffer = await this.loadBuffer(path);
-
-    if (this.active && this.currentPath === path) {
-      // 同一首已经在放，直接恢复
+    const paths = Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths];
+    const same = this.active && paths.length === this.playlist.length && paths.every((p, i) => p === this.playlist[i]);
+    if (same) {
+      // 同一组已经在放，直接恢复
       this.setMasterGain(this.volume);
       return;
     }
+
+    // 预载全部曲目，保证交叉淡化时不会因为解码而卡顿
+    this.playlist = paths;
+    this.playlistBuffers = [];
+    for (const p of paths) {
+      this.playlistBuffers.push(await this.loadBuffer(p));
+    }
+    this.playlistIndex = 0;
+
+    const buffer = this.playlistBuffers[0];
+    const path = paths[0];
 
     const now = context.currentTime;
     const crossfade = this.options.transition;
@@ -161,6 +187,18 @@ export class AmbientAudio {
 
     this.currentPath = path;
     this.startLoop(buffer, now, crossfade);
+  }
+
+  /**
+   * 用呼吸节奏给音乐塑形：吸气时音量与亮度略微抬起，呼气时收窄变柔。
+   * @param level 0（呼气末）~ 1（吸气满）
+   */
+  setBreathShape(level: number): void {
+    if (!this.context || !this.breathGain || !this.breathFilter) return;
+    const clamped = Math.max(0, Math.min(1, level));
+    const now = this.context.currentTime;
+    this.breathGain.gain.setTargetAtTime(0.76 + clamped * 0.24, now, 0.35);
+    this.breathFilter.frequency.setTargetAtTime(900 + clamped * 13000, now, 0.4);
   }
 
   /** 暂停（保留当前曲目位置，重新播放会从头开始）。 */
@@ -192,6 +230,9 @@ export class AmbientAudio {
     }
     this.active = null;
     this.currentPath = null;
+    this.playlist = [];
+    this.playlistBuffers = [];
+    this.playlistIndex = 0;
     this.analysis?.detach();
   }
 
@@ -222,11 +263,22 @@ export class AmbientAudio {
     this.master = context.createGain();
     this.master.gain.value = 0.0001;
 
+    // 呼吸塑形：主音量 → 呼吸增益 → 低通（吸气更亮、呼气更柔）→ 分析器 → 输出
+    this.breathGain = context.createGain();
+    this.breathGain.gain.value = 1;
+    this.breathFilter = context.createBiquadFilter();
+    this.breathFilter.type = 'lowpass';
+    this.breathFilter.frequency.value = 14000;
+    this.breathFilter.Q.value = 0.3;
+
+    this.master.connect(this.breathGain);
+    this.breathGain.connect(this.breathFilter);
+
     // 频谱分析接在主音量之后，场景据此驱动画面
     this.analyser = context.createAnalyser();
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.72;
-    this.master.connect(this.analyser);
+    this.breathFilter.connect(this.analyser);
     this.analyser.connect(context.destination);
     this.analysis?.attach(this.analyser);
 
@@ -248,7 +300,15 @@ export class AmbientAudio {
     const response = await fetch(path);
     if (!response.ok) throw new Error(`环境音加载失败：${path} (${response.status})`);
     const bytes = await response.arrayBuffer();
-    const buffer = await context.decodeAudioData(bytes);
+    let buffer: AudioBuffer;
+    try {
+      buffer = await context.decodeAudioData(bytes);
+    } catch (error) {
+      throw new Error(
+        `音频解码失败：${path}（${bytes.byteLength} 字节，${response.headers.get('content-type') ?? '未知类型'}）`,
+        { cause: error },
+      );
+    }
     this.buffers.set(path, buffer);
     return buffer;
   }
@@ -276,12 +336,16 @@ export class AmbientAudio {
     this.active = { source, gain, timer: 0 };
     this.setMasterGain(this.volume);
 
-    // 递归安排下一次接缝
+    // 递归安排下一次接缝：播放列表轮转，播到末尾再回到第一首
     const interval = Math.max(0.5, buffer.duration - crossfade);
     const scheduleNext = (nextWhen: number): void => {
       const timer = window.setTimeout(() => {
         if (!this.active || this.active.source !== source) return;
-        this.startLoop(buffer, nextWhen, crossfade);
+        this.playlistIndex = (this.playlistIndex + 1) % Math.max(1, this.playlistBuffers.length);
+        const next = this.playlistBuffers[this.playlistIndex];
+        if (!next) return;
+        this.currentPath = this.playlist[this.playlistIndex] ?? this.currentPath;
+        this.startLoop(next, nextWhen, crossfade);
       }, Math.max(0, (nextWhen - context.currentTime) * 1000));
       if (this.active) this.active.timer = timer;
     };

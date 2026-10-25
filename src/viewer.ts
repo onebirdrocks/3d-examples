@@ -39,6 +39,8 @@ let soundOn = false;
 stage.addFrameListener(() => {
   controls?.update();
   guide?.update(stage.elapsed);
+  // 呼吸给音乐塑形：吸气时更亮更满，呼气时收窄变柔
+  audio.setBreathShape(stage.audio.breathLevel);
 });
 
 /* ---------------- 场景选择器 ---------------- */
@@ -125,7 +127,7 @@ async function switchTo(id: string): Promise<void> {
 
 /** 根据场景是否带环境音来切换播放器界面，并尝试自动播放。 */
 function applyAudioForScene(def: SceneDefinition): void {
-  if (!def.audio) {
+  if (!def.audio && !def.audioPlaylist?.length) {
     audioCtl.hidden = true;
     audio.stop();
     soundOn = false;
@@ -134,7 +136,9 @@ function applyAudioForScene(def: SceneDefinition): void {
   }
 
   audioCtl.hidden = false;
-  const source = assetUrl(`audio/${def.audio}`);
+  const source = def.audioPlaylist?.length
+    ? def.audioPlaylist.map((name) => assetUrl(`audio/${name}`))
+    : assetUrl(`audio/${def.audio}`);
 
   // 自动播放通常会被浏览器拦截（要求用户手势），失败后由用户点击开关。
   void audio
@@ -157,8 +161,10 @@ function updateSoundButton(): void {
 }
 
 soundToggle.addEventListener('click', async () => {
-  if (!current?.audio) return;
-  const source = assetUrl(`audio/${current.audio}`);
+  if (!current?.audio && !current?.audioPlaylist?.length) return;
+  const source = current.audioPlaylist?.length
+    ? current.audioPlaylist.map((name) => assetUrl(`audio/${name}`))
+    : assetUrl(`audio/${current.audio}`);
   if (soundOn) {
     audio.pause();
     soundOn = false;

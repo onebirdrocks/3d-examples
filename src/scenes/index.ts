@@ -26,6 +26,7 @@ import zenstonesScene from './meditation/zenstones.js';
 import candleScene from './meditation/candle.js';
 import tidesScene from './meditation/tides.js';
 import mandalaScene from './meditation/mandala.js';
+import breathingUniverseScene from './meditation/breathing-universe.js';
 
 import voidDriftScene from './sleep/void-drift.js';
 import snowfallScene from './sleep/snowfall.js';
@@ -80,6 +81,7 @@ export const SCENES: readonly SceneDefinition[] = [
   candleScene,
   tidesScene,
   mandalaScene,
+  breathingUniverseScene,
   voidDriftScene,
   snowfallScene,
   emberHearthScene,

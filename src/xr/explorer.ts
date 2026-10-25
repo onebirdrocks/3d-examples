@@ -644,12 +644,15 @@ export class XrExplorer {
   /** 沉浸场景同步播放该场景的环境音（没有音乐的场景保持静音）。 */
   private async playSceneAudio(def: SceneDefinition): Promise<void> {
     if (!this.audio) return;
-    if (!def.audio) {
+    if (!def.audio && !def.audioPlaylist?.length) {
       this.audio.stop();
       return;
     }
     try {
-      await this.audio.play(`audio/${def.audio}`);
+      const source = def.audioPlaylist?.length
+        ? def.audioPlaylist.map((name) => `audio/${name}`)
+        : `audio/${def.audio}`;
+      await this.audio.play(source);
     } catch (error) {
       console.warn('[xr] 环境音播放失败', error);
     }

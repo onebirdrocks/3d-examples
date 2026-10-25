@@ -65,6 +65,15 @@ export class AudioAnalysis {
     return this.breath.phase;
   }
 
+  /**
+   * 呼吸相位强度（0 = 完全呼出，1 = 充满）。
+   * 有音乐时它仍然按声明的呼吸节奏走，可用来给音乐本身塑形
+   * （吸气更亮更满、呼气更柔更暗）。
+   */
+  get breathLevel(): number {
+    return this.breath.level;
+  }
+
   /** 绑定一个 AnalyserNode。 */
   attach(analyser: AnalyserNode): void {
     this.analyser = analyser;

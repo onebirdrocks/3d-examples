@@ -183,6 +183,12 @@ export interface SceneDefinition {
    * 仅冥想类场景使用；播放器会循环播放并做交叉淡化。
    */
   readonly audio?: string;
+  /**
+   * 背景音乐播放列表（可选）。
+   * 多首曲目会首尾相接、交叉淡化连续播放，用几段素材撑起很长且不重复的声景。
+   * 与 `audio` 二选一；两者都填时以 `audioPlaylist` 为准。
+   */
+  readonly audioPlaylist?: readonly string[];
   /** 呼吸节奏，冥想类场景用于同步画面脉动与引导提示。 */
   readonly breathing?: BreathingPattern;
   /** 光照与真实感偏好，由核心层统一实现。 */

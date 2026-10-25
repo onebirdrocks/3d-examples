@@ -2,7 +2,7 @@
 
 一个可浏览 **3D 实时效果**的画廊：**同一套代码**同时跑在普通浏览器与 **Apple Vision Pro**（WebXR `immersive-vr` / `immersive-ar`）上。
 
-46 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
+47 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
 
 ---
 
@@ -27,7 +27,7 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 
 ---
 
-## 场景清单（46）
+## 场景清单（47）
 
 ### 程序化效果（12）
 `volumetric` 体积光 · `galaxy` 星河漩涡 · `fluid` 流光水面 · `tunnel` 无限隧道 · `aurora` 极光夜空 · `terrain` 云海群山 · `stainedglass` 琉璃彩窗 · `fireflies` 萤火微光 · `gpu-tide` GPU 粒子潮汐 · `metaball` 熔核等值面 · `neon-pipeline` 霓虹雨夜 · `crystal-cave` SDF 晶体洞穴
@@ -35,8 +35,8 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 ### 模型 · 材质（6）
 `material-lab` 材质实验室 · `city` 城市微缩 · `robot` 机械守卫 · `helmet` 头盔工坊 · `celadon` 青瓷茶器 · `terrarium` 苔藓生态瓶
 
-### 冥想（6）
-`breathing` 呼吸之光 · `raindow` 雨夜窗 · `zenstones` 禅石 · `candle` 烛火 · `tides` 夜潮 · `mandala` 万象
+### 冥想（7）
+`breathing` 呼吸之光 · `raindow` 雨夜窗 · `zenstones` 禅石 · `candle` 烛火 · `tides` 夜潮 · `mandala` 万象 · `breathing-universe` 呼吸宇宙
 
 ### 助眠（10）
 `void-drift` 虚空漂流 · `snowfall` 落雪夜 · `ember-hearth` 壁炉余烬 · `fog-lighthouse` 雾中灯塔 · `bamboo-wind` 竹林夜风 · `tide-cave` 洞穴潮汐 · `deep-void` 深海之眼 · `moon-well` 月井 · `paper-lanterns` 孔明灯 · `sand-fall` 沙漏
@@ -69,7 +69,20 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 
 见 `src/core/particle-space.ts`。
 
-### 3. 真实感内核
+### 3. 呼吸宇宙（`breathing-universe`）
+
+无限暗色宇宙里悬浮的一颗半透明能量球：34k 颗发光微粒构成膜质外壳，
+56 条光丝既画成线条也画成点云，沿线跑动的光脉冲让结构持续流动。
+**4 秒吸气、6 秒呼气**——球体半径、辉光强度、丝线流速都由呼吸相位驱动，
+音乐的低频起伏再叠一层二次调制。
+
+相机完全静止，所有周期性运动都以呼吸周期为基准，因此可以无缝无限循环。
+
+配乐用三段曲目首尾相接、交叉淡化连续播放（`audioPlaylist`），
+由程序控制音量与低通滤波：吸气时更亮更满，呼气时收窄变柔，
+不需要在每次呼吸时切换音频片段。
+
+### 4. 真实感内核
 
 `src/core/lighting.ts` 把三件最有效的真实感能力做成核心层，场景只需声明意图：
 
@@ -114,13 +127,13 @@ WebXR 只在**安全上下文**（HTTPS 或 localhost）可用。Vision Pro 的 
 ```
 src/
   core/        核心运行时：舞台 / 环境 / 取景 / 音频 / 粒子空间 / 光照装置
-  scenes/      46 个场景，按分类分目录；types.ts 是场景契约
+  scenes/      47 个场景，按分类分目录；types.ts 是场景契约
   ui/          呼吸引导
   xr/          WebXR：空间墙、探索器（沉浸 / AR）、手部骨架
   styles/      样式
 scripts/       场景回归检查
 public/
-  audio/       25 首配乐（mp3，由 MiniMax 生成）
+  audio/       28 首配乐（mp3，由 MiniMax 生成）
   models/      glTF 模型素材
 ```
 
@@ -133,7 +146,7 @@ public/
 ## 致谢与素材
 
 - 模型素材来自 [three.js 官方示例仓库](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf)：`RobotExpressive.glb`、`DamagedHelmet`
-- 全部 25 首配乐由 MiniMax 音乐生成模型创作（含 Enigma 风格的圣咏质感曲目）
+- 全部 28 首配乐由 MiniMax 音乐生成模型创作（含 Enigma 风格的圣咏质感曲目）
 
 ## License
 
