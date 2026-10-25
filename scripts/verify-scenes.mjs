@@ -36,13 +36,12 @@ const SHARDS = Math.max(1, Number(process.env.VERIFY_SHARDS ?? 1));
 const MIN_LUMA = 0.004;
 
 /**
- * 检查用的渲染档位：视口与画质都比人眼调试低一档。
- * CI 的 runner 没有 GPU，SwiftShader 光栅化与着色器编译是主要开销，
- * 降档能显著缩短每场景耗时；三项检查（报错 / 错误面板 / 非全黑）的判据不变。
+ * 检查用的渲染档位。默认与作者看到的完全一致（视口 640×400、画质 1），
+ * 环境变量可以临时调低，用来在很慢的机器上快速过一遍。
  */
-const CHECK_WIDTH = Number(process.env.VERIFY_WIDTH ?? 480);
-const CHECK_HEIGHT = Number(process.env.VERIFY_HEIGHT ?? 300);
-const CHECK_QUALITY = process.env.VERIFY_QUALITY ?? '0.75';
+const CHECK_WIDTH = Number(process.env.VERIFY_WIDTH ?? 640);
+const CHECK_HEIGHT = Number(process.env.VERIFY_HEIGHT ?? 400);
+const CHECK_QUALITY = process.env.VERIFY_QUALITY ?? '1';
 
 const CHROME_PATHS = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
