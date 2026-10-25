@@ -1,29 +1,19 @@
+import * as THREE from 'three';
+import type { AudioAnalysis } from './audio-analysis.js';
+import type { AudioLayerDefinition, SceneMode } from '../scenes/types.js';
+
 /**
  * 环境音播放器
  * ---------------------------------------------------------------
- * 用 Web Audio API 播放冥想场景的背景音乐：
- * - 解码为 AudioBuffer，整曲循环；
- * - 循环接缝处做交叉淡化（crossfade），听感上无缝；
- * - 切换场景时在旧曲与新曲之间做渐变切换；
- * - 支持音量、暂停、恢复与淡入淡出。
+ * 两种用法：
  *
- * 说明：浏览器要求音频必须由用户手势触发，因此首次 play() 会在被拒绝时
- * 抛出错误，由界面提示用户点击开启。
+ * 1. **单曲**（`AmbientAudio.play(url)`）—— 一个场景一首配乐。
+ * 2. **多路图层**（`AmbientAudio.setLayers([...])`）—— 风声 / 水声 / 虫鸣 / 乐声
+ *    各占一路，用户可以分别调节音量；场景再通过 `applyMode(mode)` 按环境预设
+ *    （晴夜 / 雨夜）调整各路配比。
+ *
+ * 每路内部都是「多段素材首尾相接 + 交叉淡化」的循环，接缝听不出来。
  */
-
-import * as THREE from 'three';
-import type { AudioAnalysis } from './audio-analysis.js';
-
-export interface AmbientAudioOptions {
-  /** 循环接缝的交叉淡化时长（秒）。 */
-  crossfade?: number;
-  /** 切换曲目时的渐变时长（秒）。 */
-  transition?: number;
-  /** 淡入时长（秒）。 */
-  fadeIn?: number;
-}
-
-const DEFAULT_CROSSFADE = 1.4;
 
 /**
  * 创建一个共享的**混响总线**。
@@ -80,21 +70,42 @@ function createImpulseResponse(
   return buffer;
 }
 
+export interface AmbientAudioOptions {
+  /** 循环接缝的交叉淡化时长（秒）。 */
+  crossfade?: number;
+  /** 切换曲目时的渐变时长（秒）。 */
+  transition?: number;
+  /** 淡入时长（秒）。 */
+  fadeIn?: number;
+}
+
+const DEFAULT_CROSSFADE = 1.4;
+
+/** 一路声音。 */
+interface AudioChannel {
+  readonly id: string;
+  /** 该路的音量节点，接到总线。 */
+  readonly gain: GainNode;
+  buffers: AudioBuffer[];
+  index: number;
+  active: { source: AudioBufferSourceNode; gain: GainNode; timer: number } | null;
+  /** 用户设定的基础音量 0~1。 */
+  volume: number;
+  /** 环境预设带来的倍率。 */
+  multiplier: number;
+}
+
 export class AmbientAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private analyser: AnalyserNode | null = null;
-  private buffers = new Map<string, AudioBuffer>();
-  private currentPath: string | null = null;
-  private active: { source: AudioBufferSourceNode; gain: GainNode; timer: number } | null = null;
-  /** 播放列表：多首曲目首尾相接交叉淡化，可以撑起很长的不重复体验。 */
-  private playlist: string[] = [];
-  private playlistBuffers: AudioBuffer[] = [];
-  private playlistIndex = 0;
-  private breathFilter: BiquadFilterNode | null = null;
   private breathGain: GainNode | null = null;
+  private breathFilter: BiquadFilterNode | null = null;
+  private readonly buffers = new Map<string, AudioBuffer>();
+  private readonly channels = new Map<string, AudioChannel>();
   private readonly options: Required<AmbientAudioOptions>;
   private volume = 0.55;
+  private analysis: AudioAnalysis | null = null;
 
   constructor(options: AmbientAudioOptions = {}) {
     this.options = {
@@ -112,81 +123,219 @@ export class AmbientAudio {
     this.analysis = analysis;
   }
 
-  private analysis: AudioAnalysis | null = null;
-
   /** 是否正在播放。 */
   get isPlaying(): boolean {
-    return this.active !== null;
+    for (const channel of this.channels.values()) {
+      if (channel.active) return true;
+    }
+    return false;
   }
 
-  /** 当前曲目路径。 */
+  /** 当前主通道名（兼容旧接口）。 */
   get current(): string | null {
-    return this.currentPath;
+    return this.channels.has('main') ? 'main' : null;
   }
 
   get currentVolume(): number {
     return this.volume;
   }
 
+  /* ------------------------------------------------------------------ *
+   * 多路图层
+   * ------------------------------------------------------------------ */
+
+  /**
+   * 建立多路声音图层并开始循环播放。
+   * 每路有独立的音量，用户可以分别调节。
+   */
+  async setLayers(layers: readonly AudioLayerDefinition[]): Promise<void> {
+    const context = this.ensureContext();
+    await this.resumeIfPossible();
+
+    // 停掉所有旧通道（包括主通道），否则两层声音会叠在一起
+    for (const id of [...this.channels.keys()]) {
+      this.stopChannel(id);
+    }
+
+    const now = context.currentTime;
+
+    for (const layer of layers) {
+      const channel = this.createChannel(layer.id, layer.volume ?? 0.4);
+      for (const url of layer.urls) {
+        try {
+          channel.buffers.push(await this.loadBuffer(url));
+        } catch (error) {
+          console.warn(`[audio] 图层「${layer.label}」加载失败`, error);
+        }
+      }
+      if (channel.buffers.length) {
+        this.startChannelLoop(channel, now, this.options.fadeIn);
+      }
+    }
+  }
+
+  /** 设定某一图层的音量 0~1。 */
+  setLayerVolume(id: string, volume: number): void {
+    const channel = this.channels.get(id);
+    if (!channel) return;
+    channel.volume = Math.max(0, Math.min(1, volume));
+    this.applyChannelGain(channel);
+  }
+
+  /** 设定某一图层的倍率（环境预设用）。 */
+  setLayerMultiplier(id: string, multiplier: number): void {
+    const channel = this.channels.get(id);
+    if (!channel) return;
+    channel.multiplier = Math.max(0, Math.min(2, multiplier));
+    this.applyChannelGain(channel);
+  }
+
+  /**
+   * 应用环境预设：按倍率调整各图层音量。
+   * 预设里没提到的图层保持原样。
+   */
+  applyMode(mode: SceneMode | null): void {
+    if (!mode?.audio) return;
+    for (const [id, multiplier] of Object.entries(mode.audio)) {
+      this.setLayerMultiplier(id, multiplier);
+    }
+  }
+
+  /** 当前各图层的音量（供界面回显）。 */
+  getLayerVolumes(): Record<string, number> {
+    const result: Record<string, number> = {};
+    for (const [id, channel] of this.channels) {
+      result[id] = channel.volume;
+    }
+    return result;
+  }
+
+  private applyChannelGain(channel: AudioChannel): void {
+    if (!this.context) return;
+    // 总音量由 master 统一控制，这里只管该路自己的音量与模式倍率
+    const target = Math.max(0.0001, channel.volume * channel.multiplier);
+    channel.gain.gain.setTargetAtTime(target, this.context.currentTime, 0.12);
+  }
+
+  private createChannel(id: string, volume: number): AudioChannel {
+    const context = this.ensureContext();
+    const gain = context.createGain();
+    gain.gain.value = 0.0001;
+    gain.connect(this.master!);
+    const channel: AudioChannel = {
+      id,
+      gain,
+      buffers: [],
+      index: 0,
+      active: null,
+      volume,
+      multiplier: 1,
+    };
+    this.channels.set(id, channel);
+    this.applyChannelGain(channel);
+    this.setMasterGain(this.volume);
+    return channel;
+  }
+
+  /* ------------------------------------------------------------------ *
+   * 单曲
+   * ------------------------------------------------------------------ */
+
   /**
    * 播放指定音频（相对站点根路径，例如 'audio/rain-window.mp3'）。
-   *
-   * 也可以传一个数组：多首曲目会首尾相接、交叉淡化连续播放，
-   * 用几段素材就能撑起十分钟以上不重复的冥想声景。
-   *
-   * 同一首重复调用不会重启；换曲会做交叉过渡。
+   * 也可以传一个数组：多首曲目会首尾相接、交叉淡化连续播放。
    */
   async play(pathOrPaths: string | string[]): Promise<void> {
     const context = this.ensureContext();
-    if (context.state === 'suspended') {
-      // 被自动播放策略挡住时 resume() 可能一直 pending，不能无限等它 ——
-      // 否则后面的缓冲区加载全部卡住，音频永远不 ready。
-      await Promise.race([
-        context.resume().catch(() => undefined),
-        new Promise((resolve) => setTimeout(resolve, 300)),
-      ]);
-    }
+    await this.resumeIfPossible();
 
     const paths = Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths];
-    const same = this.active && paths.length === this.playlist.length && paths.every((p, i) => p === this.playlist[i]);
+
+    // 停掉多路图层，主通道独占
+    for (const id of [...this.channels.keys()]) {
+      if (id !== 'main') this.stopChannel(id);
+    }
+
+    const existing = this.channels.get('main');
+    const same =
+      existing &&
+      existing.buffers.length === paths.length &&
+      paths.every((p, i) => this.bufferPaths.get(existing.id)?.[i] === p);
     if (same) {
-      // 同一组已经在放，直接恢复
       this.setMasterGain(this.volume);
       return;
     }
 
-    // 预载全部曲目，保证交叉淡化时不会因为解码而卡顿
-    this.playlist = paths;
-    this.playlistBuffers = [];
+    this.stopChannel('main');
+    const channel = this.createChannel('main', 1);
+    this.bufferPaths.set('main', paths);
+
     for (const p of paths) {
-      this.playlistBuffers.push(await this.loadBuffer(p));
+      try {
+        channel.buffers.push(await this.loadBuffer(p));
+      } catch (error) {
+        console.warn('[audio] 音频加载失败', p, error);
+      }
     }
-    this.playlistIndex = 0;
+    if (!channel.buffers.length) return;
 
-    const buffer = this.playlistBuffers[0];
-    const path = paths[0];
+    this.startChannelLoop(channel, context.currentTime, this.options.transition);
+  }
 
-    const now = context.currentTime;
-    const crossfade = this.options.transition;
+  private readonly bufferPaths = new Map<string, string[]>();
 
-    if (this.active) {
-      // 旧曲淡出
-      const old = this.active;
-      old.gain.gain.cancelScheduledValues(now);
-      old.gain.gain.setValueAtTime(old.gain.gain.value, now);
-      old.gain.gain.linearRampToValueAtTime(0.0001, now + crossfade);
+  /** 暂停（重新播放会从头开始）。 */
+  pause(): void {
+    if (!this.context) return;
+    const now = this.context.currentTime;
+    for (const channel of this.channels.values()) {
+      if (!channel.active) continue;
+      channel.active.gain.gain.cancelScheduledValues(now);
+      channel.active.gain.gain.setValueAtTime(channel.active.gain.gain.value, now);
+      channel.active.gain.gain.linearRampToValueAtTime(0.0001, now + 0.6);
+      const active = channel.active;
+      channel.active = null;
       window.setTimeout(() => {
         try {
-          old.source.stop();
+          active.source.stop();
         } catch {
           /* 已经停止 */
         }
-      }, (crossfade + 0.2) * 1000);
-      this.active = null;
+      }, 800);
     }
+    this.analysis?.detach();
+  }
 
-    this.currentPath = path;
-    this.startLoop(buffer, now, crossfade);
+  /** 停止并清除全部声音。 */
+  stop(): void {
+    for (const id of [...this.channels.keys()]) {
+      this.stopChannel(id);
+    }
+    this.channels.clear();
+    this.bufferPaths.clear();
+    this.analysis?.detach();
+  }
+
+  private stopChannel(id: string): void {
+    const channel = this.channels.get(id);
+    if (!channel) return;
+    if (channel.active) {
+      try {
+        channel.active.source.stop();
+      } catch {
+        /* 已经停止 */
+      }
+      window.clearTimeout(channel.active.timer);
+      channel.active = null;
+    }
+    this.channels.delete(id);
+    this.bufferPaths.delete(id);
+  }
+
+  /** 设置总线音量（0~1），影响所有图层。 */
+  setVolume(value: number): void {
+    this.volume = Math.max(0, Math.min(1, value));
+    this.setMasterGain(this.volume);
   }
 
   /**
@@ -201,50 +350,6 @@ export class AmbientAudio {
     this.breathFilter.frequency.setTargetAtTime(900 + clamped * 13000, now, 0.4);
   }
 
-  /** 暂停（保留当前曲目位置，重新播放会从头开始）。 */
-  pause(): void {
-    if (!this.active || !this.context) return;
-    const now = this.context.currentTime;
-    this.active.gain.gain.cancelScheduledValues(now);
-    this.active.gain.gain.setValueAtTime(this.active.gain.gain.value, now);
-    this.active.gain.gain.linearRampToValueAtTime(0.0001, now + 0.6);
-    const active = this.active;
-    this.active = null;
-    this.analysis?.detach();
-    window.setTimeout(() => {
-      try {
-        active.source.stop();
-      } catch {
-        /* 已经停止 */
-      }
-    }, 800);
-  }
-
-  /** 停止并清除当前曲目。 */
-  stop(): void {
-    if (!this.active) return;
-    try {
-      this.active.source.stop();
-    } catch {
-      /* 已经停止 */
-    }
-    this.active = null;
-    this.currentPath = null;
-    this.playlist = [];
-    this.playlistBuffers = [];
-    this.playlistIndex = 0;
-    this.analysis?.detach();
-  }
-
-  /** 设置音量（0~1）。 */
-  setVolume(value: number): void {
-    this.volume = Math.max(0, Math.min(1, value));
-    if (!this.context || !this.master) return;
-    const now = this.context.currentTime;
-    this.master.gain.cancelScheduledValues(now);
-    this.master.gain.setTargetAtTime(this.volume, now, 0.08);
-  }
-
   /** 释放全部资源。 */
   dispose(): void {
     this.stop();
@@ -252,7 +357,12 @@ export class AmbientAudio {
     void this.context?.close();
     this.context = null;
     this.master = null;
+    this.analyser = null;
   }
+
+  /* ------------------------------------------------------------------ *
+   * 内部
+   * ------------------------------------------------------------------ */
 
   private ensureContext(): AudioContext {
     if (this.context) return this.context;
@@ -263,7 +373,7 @@ export class AmbientAudio {
     this.master = context.createGain();
     this.master.gain.value = 0.0001;
 
-    // 呼吸塑形：主音量 → 呼吸增益 → 低通（吸气更亮、呼气更柔）→ 分析器 → 输出
+    // 呼吸塑形：总线 → 呼吸增益 → 低通（吸气更亮更满、呼气更柔）→ 分析器 → 输出
     this.breathGain = context.createGain();
     this.breathGain.gain.value = 1;
     this.breathFilter = context.createBiquadFilter();
@@ -274,7 +384,6 @@ export class AmbientAudio {
     this.master.connect(this.breathGain);
     this.breathGain.connect(this.breathFilter);
 
-    // 频谱分析接在主音量之后，场景据此驱动画面
     this.analyser = context.createAnalyser();
     this.analyser.fftSize = 1024;
     this.analyser.smoothingTimeConstant = 0.72;
@@ -283,6 +392,16 @@ export class AmbientAudio {
     this.analysis?.attach(this.analyser);
 
     return context;
+  }
+
+  private async resumeIfPossible(): Promise<void> {
+    if (!this.context || this.context.state !== 'suspended') return;
+    // 被自动播放策略挡住时 resume() 可能一直 pending，不能无限等它 ——
+    // 否则后面的缓冲区加载全部卡住，音频永远不 ready。
+    await Promise.race([
+      this.context.resume().catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 300)),
+    ]);
   }
 
   private setMasterGain(value: number): void {
@@ -314,13 +433,15 @@ export class AmbientAudio {
   }
 
   /**
-   * 启动循环播放。
+   * 启动一路的循环播放。
    * 每隔 (时长 - 交叉淡化) 秒启动一个新的声源，并在开头 X 秒内与上一个声源交叉淡化，
-   * 从而消除 MP3 循环接缝的断点与爆音。
+   * 从而消除 MP3 循环接缝的断点与爆音。多段素材则依次轮转，播到末尾再回到第一段。
    */
-  private startLoop(buffer: AudioBuffer, when: number, fadeIn: number): void {
+  private startChannelLoop(channel: AudioChannel, when: number, fadeIn: number): void {
     const context = this.context!;
-    const master = this.master!;
+    const buffer = channel.buffers[channel.index % channel.buffers.length];
+    if (!buffer) return;
+
     const crossfade = Math.min(this.options.crossfade, buffer.duration * 0.2);
 
     const source = context.createBufferSource();
@@ -330,26 +451,17 @@ export class AmbientAudio {
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, when);
     gain.gain.linearRampToValueAtTime(1, when + fadeIn);
-    source.connect(gain).connect(master);
+    source.connect(gain).connect(channel.gain);
     source.start(when);
 
-    this.active = { source, gain, timer: 0 };
-    this.setMasterGain(this.volume);
+    channel.active = { source, gain, timer: 0 };
 
-    // 递归安排下一次接缝：播放列表轮转，播到末尾再回到第一首
     const interval = Math.max(0.5, buffer.duration - crossfade);
-    const scheduleNext = (nextWhen: number): void => {
-      const timer = window.setTimeout(() => {
-        if (!this.active || this.active.source !== source) return;
-        this.playlistIndex = (this.playlistIndex + 1) % Math.max(1, this.playlistBuffers.length);
-        const next = this.playlistBuffers[this.playlistIndex];
-        if (!next) return;
-        this.currentPath = this.playlist[this.playlistIndex] ?? this.currentPath;
-        this.startLoop(next, nextWhen, crossfade);
-      }, Math.max(0, (nextWhen - context.currentTime) * 1000));
-      if (this.active) this.active.timer = timer;
-    };
-
-    scheduleNext(when + interval);
+    const timer = window.setTimeout(() => {
+      if (channel.active?.source !== source) return;
+      channel.index = (channel.index + 1) % channel.buffers.length;
+      this.startChannelLoop(channel, context.currentTime, crossfade);
+    }, Math.max(0, (when + interval - context.currentTime) * 1000));
+    channel.active.timer = timer;
   }
 }

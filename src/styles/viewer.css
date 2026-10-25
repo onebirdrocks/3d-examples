@@ -310,6 +310,99 @@
   }
 }
 
+/* ---------- 分层混音面板 ---------- */
+
+.mixer {
+  position: absolute;
+  top: 66px;
+  right: clamp(16px, 3vw, 34px);
+  z-index: 30;
+  width: 236px;
+  padding: 14px 16px 12px;
+  border-radius: 16px;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
+}
+
+.mixer[hidden] {
+  display: none;
+}
+
+.mixer__title {
+  margin: 0 0 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mixer__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.mixer__row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.mixer__name {
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.mixer__row input[type='range'] {
+  width: 100%;
+  accent-color: #7fb2ff;
+  cursor: pointer;
+}
+
+/* ---------- 环境预设 ---------- */
+
+.modes {
+  position: absolute;
+  top: 92px;
+  left: clamp(16px, 3vw, 34px);
+  z-index: 21;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 13, 22, 0.6);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+}
+
+.modes[hidden] {
+  display: none;
+}
+
+.mode-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.mode-btn:hover {
+  color: var(--text);
+}
+
+.mode-btn.is-active {
+  color: #fff;
+  background: linear-gradient(120deg, #4f8dff, #8a5cff);
+}
+
 /* ---------- AR 叠层提示 ---------- */
 
 .xr-overlay {

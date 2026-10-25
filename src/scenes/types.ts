@@ -72,6 +72,11 @@ export interface SceneInstance {
    */
   onPinch?(info: PinchInfo): void;
   /**
+   * 切换环境预设时由核心层调用。
+   * 场景把 `mode.params` 解释成自己的画面参数。
+   */
+  setMode?(mode: SceneMode): void;
+  /**
    * 环绕型场景：内容围绕用户展开（例如银河、隧道、极光）。
    * 为 true 时 XR 中不会把内容前移，用户站在内容之中。
    */
@@ -121,6 +126,34 @@ export interface PinchInfo {
   hand: Vector3;
   /** 是否命中了标记了 `userData.pinchable` 的对象。 */
   hit: boolean;
+}
+
+/**
+ * 声音图层：一路可独立调节音量的环境声。
+ * 场景可以声明多路（如风 / 水 / 虫鸣 / 音乐），由界面提供独立的混音推子。
+ */
+export interface AudioLayerDefinition {
+  /** 图层 id */
+  readonly id: string;
+  /** 界面显示名 */
+  readonly label: string;
+  /** 音频文件（相对 public/audio），多段会首尾相接交叉淡化连续播放 */
+  readonly urls: readonly string[];
+  /** 默认音量 0~1 */
+  readonly volume?: number;
+}
+
+/**
+ * 环境预设：可切换的天气 / 氛围档位。
+ * 切换时会同时改变画面参数与各声音图层的配比，而不必换整个场景。
+ */
+export interface SceneMode {
+  readonly id: string;
+  readonly label: string;
+  /** 场景自行解释的参数（例如云量、雨强、雾浓度）。 */
+  readonly params?: Readonly<Record<string, number>>;
+  /** 该模式下各声音图层的音量倍率。 */
+  readonly audio?: Readonly<Record<string, number>>;
 }
 
 /** 呼吸节奏，用于冥想场景的引导动画。 */
@@ -178,6 +211,16 @@ export interface SceneDefinition {
   readonly gradient: readonly [string, string];
   /** 分类。 */
   readonly category: SceneCategory;
+  /**
+   * 多路声音图层。有它时界面会显示分层混音推子，
+   * 否则退化为单一音量滑块 + `audio` 单曲。
+   */
+  readonly audioLayers?: readonly AudioLayerDefinition[];
+  /**
+   * 可切换的环境预设（如「晴夜」「雨夜」）。
+   * 切换会同时改变画面参数与声音配比，而不必换场景。
+   */
+  readonly modes?: readonly SceneMode[];
   /**
    * 背景音乐文件名（位于 public/audio/ 下）。
    * 仅冥想类场景使用；播放器会循环播放并做交叉淡化。

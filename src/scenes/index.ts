@@ -54,6 +54,7 @@ import sandFallScene from './sleep/sand-fall.js';
 import mistyPinesScene from './environment/misty-pines.js';
 import harborDuskScene from './environment/harbor-dusk.js';
 import riceTerraceScene from './environment/rice-terrace.js';
+import moonlightGardenScene from './environment/moonlight-garden.js';
 
 /** 全部场景，按画廊展示顺序排列。 */
 export const SCENES: readonly SceneDefinition[] = [
@@ -104,6 +105,7 @@ export const SCENES: readonly SceneDefinition[] = [
   mistyPinesScene,
   harborDuskScene,
   riceTerraceScene,
+  moonlightGardenScene,
 ];
 
 export const SCENE_CATEGORIES = [

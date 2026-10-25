@@ -2,7 +2,7 @@
 
 一个可浏览 **3D 实时效果**的画廊：**同一套代码**同时跑在普通浏览器与 **Apple Vision Pro**（WebXR `immersive-vr` / `immersive-ar`）上。
 
-47 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
+48 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
 
 ---
 
@@ -13,7 +13,7 @@ npm install
 npm run dev       # 开发服务器 http://localhost:5173
 npm run build     # 类型检查 + 生产构建 → dist/
 npm run preview   # 预览构建产物 http://localhost:4173
-npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑屏
+npm run verify    # 回归检查：逐个打开 48 个场景，查报错 / 黑屏
 ```
 
 `npm run verify` 需要本机装有 Chrome 或 Chromium（不额外下载浏览器）。它会逐个打开全部场景，检查控制台报错、错误面板与画面是否全黑 —— GitHub Actions 上每次 push 都会自动跑一遍。
@@ -27,7 +27,7 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 
 ---
 
-## 场景清单（47）
+## 场景清单（48）
 
 ### 程序化效果（12）
 `volumetric` 体积光 · `galaxy` 星河漩涡 · `fluid` 流光水面 · `tunnel` 无限隧道 · `aurora` 极光夜空 · `terrain` 云海群山 · `stainedglass` 琉璃彩窗 · `fireflies` 萤火微光 · `gpu-tide` GPU 粒子潮汐 · `metaball` 熔核等值面 · `neon-pipeline` 霓虹雨夜 · `crystal-cave` SDF 晶体洞穴
@@ -41,8 +41,8 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 ### 助眠（10）
 `void-drift` 虚空漂流 · `snowfall` 落雪夜 · `ember-hearth` 壁炉余烬 · `fog-lighthouse` 雾中灯塔 · `bamboo-wind` 竹林夜风 · `tide-cave` 洞穴潮汐 · `deep-void` 深海之眼 · `moon-well` 月井 · `paper-lanterns` 孔明灯 · `sand-fall` 沙漏
 
-### 真实环境（10）
-`rainy-street` 雨夜街道 · `forest-stream` 林间溪流 · `sea-cliff` 海崖听涛 · `snowfield` 旷野风声 · `desert-night` 沙漠星夜 · `tea-room` 和风茶室 · `planetarium` 星象仪 · `misty-pines` 雾松林 · `harbor-dusk` 港湾黄昏 · `rice-terrace` 梯田晨光
+### 真实环境（11）
+`rainy-street` 雨夜街道 · `forest-stream` 林间溪流 · `sea-cliff` 海崖听涛 · `snowfield` 旷野风声 · `desert-night` 沙漠星夜 · `tea-room` 和风茶室 · `planetarium` 星象仪 · `misty-pines` 雾松林 · `harbor-dusk` 港湾黄昏 · `rice-terrace` 梯田晨光 · `moonlight-garden` 月夜庭院
 
 ### 模拟（2）
 `silk-drape` 悬垂绸缎 · `piano-ruins` 废墟里的钢琴
@@ -90,6 +90,22 @@ npm run verify    # 回归检查：逐个打开 39 个场景，查报错 / 黑�
 - **实时环境反射** —— `CubeCamera` 抓取场景自身作为环境贴图（PMREM 包装）
 - **间接光探针** —— 从同一张立方图烘焙 SH，墙面能接到窗外的天光
 
+### 5. 分层混音与环境预设
+
+场景可以声明**多路声音图层**（`audioLayers`），每路一个独立推子：风声、水声、虫鸣、乐声、雨声……
+每路内部是多段素材首尾相接 + 交叉淡化的无缝循环，接缝听不出来。
+
+场景还能声明**环境预设**（`modes`）：晴夜 / 雨夜这类切换会同时改画面与声音配比，
+不必整个换场景。`月夜庭院` 就是一个例子 —— 切到雨夜时：
+
+- 云变厚、月亮被压暗、雾更浓、树摆幅更大
+- 水面泛起雨点涟漪，天上落下雨丝
+- 灯笼的暖光相对更明显
+- **雨声图层拉满**，风声更大、虫鸣几乎消失、乐声压低
+
+预设里的音量是**倍率**，叠加在用户自己的推子设置之上 —— 推子决定「这一路要多大」，
+预设决定「此刻这一路占多少」。
+
 ---
 
 ## Vision Pro
@@ -127,13 +143,13 @@ WebXR 只在**安全上下文**（HTTPS 或 localhost）可用。Vision Pro 的 
 ```
 src/
   core/        核心运行时：舞台 / 环境 / 取景 / 音频 / 粒子空间 / 光照装置
-  scenes/      47 个场景，按分类分目录；types.ts 是场景契约
+  scenes/      48 个场景，按分类分目录；types.ts 是场景契约
   ui/          呼吸引导
   xr/          WebXR：空间墙、探索器（沉浸 / AR）、手部骨架
   styles/      样式
-scripts/       场景回归检查
+scripts/       场景回归检查 + 单场景截图 / 像素采样工具
 public/
-  audio/       28 首配乐（mp3，由 MiniMax 生成）
+  audio/       33 首配乐（mp3，由 MiniMax 生成）
   models/      glTF 模型素材
 ```
 
@@ -146,7 +162,7 @@ public/
 ## 致谢与素材
 
 - 模型素材来自 [three.js 官方示例仓库](https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf)：`RobotExpressive.glb`、`DamagedHelmet`
-- 全部 28 首配乐由 MiniMax 音乐生成模型创作（含 Enigma 风格的圣咏质感曲目）
+- 全部 33 首配乐由 MiniMax 音乐生成模型创作（含 Enigma 风格的圣咏质感曲目）
 
 ## License
 

@@ -242,6 +242,8 @@ export function createRidgeTexture(options: RidgeTextureOptions = {}): THREE.Can
 
   const image = ctx.createImageData(width, height);
   const rgb = new THREE.Color(options.color ?? '#1b2430');
+  // THREE.Color 内部存的是线性值，画布要的却是 sRGB 字节，这里要换算回去
+  const srgb = rgb.clone().convertLinearToSRGB();
 
   for (let x = 0; x < width; x += 1) {
     let h = 0;
@@ -266,9 +268,9 @@ export function createRidgeTexture(options: RidgeTextureOptions = {}): THREE.Can
         // 越靠近山脚越暗一点，避免死板的平涂
         const depth = THREE.MathUtils.clamp((y - lineY) / Math.max(1, height - lineY), 0, 1);
         const shade = 1 - depth * 0.22;
-        image.data[i] = Math.round(rgb.r * 255 * shade);
-        image.data[i + 1] = Math.round(rgb.g * 255 * shade);
-        image.data[i + 2] = Math.round(rgb.b * 255 * shade);
+        image.data[i] = Math.round(srgb.r * 255 * shade);
+        image.data[i + 1] = Math.round(srgb.g * 255 * shade);
+        image.data[i + 2] = Math.round(srgb.b * 255 * shade);
         image.data[i + 3] = 255;
       }
     }

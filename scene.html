@@ -65,10 +65,36 @@
               value="55"
               aria-label="环境音音量"
             />
+            <button
+              class="icon-btn"
+              id="mixer-toggle"
+              title="分层混音"
+              aria-label="分层混音"
+              hidden
+            >
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                <path
+                  d="M4 4v12M10 4v12M16 4v12"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                />
+                <circle cx="4" cy="8" r="2" fill="currentColor" />
+                <circle cx="10" cy="12" r="2" fill="currentColor" />
+                <circle cx="16" cy="6" r="2" fill="currentColor" />
+              </svg>
+            </button>
           </div>
           <button class="btn btn--ghost" id="enter-ar" disabled>放到真实空间</button>
           <button class="btn btn--primary" id="enter-xr" disabled>沉浸模式</button>
         </div>
+
+        <div class="mixer" id="mixer" hidden>
+          <p class="mixer__title">分层混音</p>
+          <div class="mixer__rows" id="mixer-rows"></div>
+        </div>
+
+        <div class="modes" id="modes" hidden></div>
       </div>
 
       <div class="xr-banner" id="xr-banner"></div>

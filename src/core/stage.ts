@@ -4,7 +4,13 @@ import { applyFraming } from './framing.js';
 import { AudioAnalysis } from './audio-analysis.js';
 import { LightingRig } from './lighting.js';
 import { createReverbBus } from './audio.js';
-import type { SceneContext, SceneDefinition, SceneEnvironment, SceneInstance } from '../scenes/types.js';
+import type {
+  SceneContext,
+  SceneDefinition,
+  SceneEnvironment,
+  SceneInstance,
+  SceneMode,
+} from '../scenes/types.js';
 
 /** XR 中非环绕型场景与用户之间的默认距离（米）。 */
 const DEFAULT_XR_DISTANCE = 3;
@@ -46,6 +52,7 @@ export class Stage {
   private manualPlacement = false;
   private updateErrorReported = false;
   private rigSoftness = 0;
+  private activeMode: SceneMode | null = null;
   private readonly frameListeners = new Set<(time: number, delta: number) => void>();
 
   constructor(options: StageOptions) {
@@ -141,6 +148,16 @@ export class Stage {
     this.rig.configure(def);
     this.rigSoftness = def?.lighting?.softShadows ?? 0;
     this.applySoftShadows(instance);
+    if (this.activeMode) this.instance.setMode?.(this.activeMode);
+  }
+
+  /**
+   * 切换环境预设（晴夜 / 雨夜一类）。
+   * 会同时通知当前场景与之后挂载的场景。
+   */
+  setMode(mode: SceneMode | null): void {
+    this.activeMode = mode;
+    if (mode) this.instance?.setMode?.(mode);
   }
 
   /** 按场景声明放大阴影采样半径，让硬边阴影变软。 */

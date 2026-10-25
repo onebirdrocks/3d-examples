@@ -2,7 +2,7 @@ import './styles/app.css';
 import './styles/viewer.css';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SCENES, getSceneById, getSceneIndex } from './scenes/index.js';
-import type { SceneDefinition } from './scenes/types.js';
+import type { AudioLayerDefinition, SceneDefinition, SceneMode } from './scenes/types.js';
 import { Stage } from './core/stage.js';
 import { AmbientAudio } from './core/audio.js';
 import { assetUrl } from './core/loader.js';
@@ -24,6 +24,10 @@ const banner = document.querySelector<HTMLElement>('#xr-banner')!;
 const audioCtl = document.querySelector<HTMLElement>('#audio-ctl')!;
 const soundToggle = document.querySelector<HTMLButtonElement>('#sound-toggle')!;
 const volumeEl = document.querySelector<HTMLInputElement>('#volume')!;
+const mixer = document.querySelector<HTMLElement>('#mixer')!;
+const mixerToggle = document.querySelector<HTMLButtonElement>('#mixer-toggle')!;
+const mixerRows = document.querySelector<HTMLElement>('#mixer-rows')!;
+const modesEl = document.querySelector<HTMLElement>('#modes')!;
 
 const stage = new Stage({ canvas, quality: 1 });
 const audio = new AmbientAudio();
@@ -127,6 +131,40 @@ async function switchTo(id: string): Promise<void> {
 
 /** 根据场景是否带环境音来切换播放器界面，并尝试自动播放。 */
 function applyAudioForScene(def: SceneDefinition): void {
+  // 环境预设
+  buildModes(def.modes);
+  mixerRows.replaceChildren();
+  mixer.hidden = true;
+
+  const layers = def.audioLayers;
+  if (layers?.length) {
+    // 多路图层：每路一个独立推子
+    audioCtl.hidden = false;
+    mixerToggle.hidden = false;
+    buildMixer(layers);
+    void audio
+      .setLayers(
+        layers.map((layer) => ({
+          ...layer,
+          urls: layer.urls.map((name) => assetUrl(`audio/${name}`)),
+        })),
+      )
+      .then(() => {
+        // 图层是刚建立的，模式倍率需要补一次
+        if (activeMode) audio.applyMode(activeMode);
+        soundOn = true;
+        updateSoundButton();
+      })
+      .catch((error) => {
+        console.warn('[viewer] 环境音自动播放被拦截，等待用户开启', error);
+        soundOn = false;
+        updateSoundButton();
+      });
+    return;
+  }
+
+  mixerToggle.hidden = true;
+
   if (!def.audio && !def.audioPlaylist?.length) {
     audioCtl.hidden = true;
     audio.stop();
@@ -154,6 +192,70 @@ function applyAudioForScene(def: SceneDefinition): void {
     });
 }
 
+/** 生成分层混音推子。 */
+function buildMixer(layers: readonly AudioLayerDefinition[]): void {
+  for (const layer of layers) {
+    const row = document.createElement('label');
+    row.className = 'mixer__row';
+
+    const name = document.createElement('span');
+    name.className = 'mixer__name';
+    name.textContent = layer.label;
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = '100';
+    input.value = String(Math.round((layer.volume ?? 0.4) * 100));
+    input.addEventListener('input', () => {
+      audio.setLayerVolume(layer.id, Number(input.value) / 100);
+    });
+
+    row.append(name, input);
+    mixerRows.append(row);
+  }
+}
+
+/** 生成环境预设切换（晴夜 / 雨夜）。 */
+function buildModes(modes: readonly SceneMode[] | undefined): void {
+  modesEl.replaceChildren();
+  if (!modes?.length) {
+    modesEl.hidden = true;
+    activeMode = null;
+    stage.setMode(null);
+    return;
+  }
+
+  modesEl.hidden = false;
+  for (const mode of modes) {
+    const button = document.createElement('button');
+    button.className = 'mode-btn';
+    button.type = 'button';
+    button.textContent = mode.label;
+    button.addEventListener('click', () => {
+      applyMode(mode);
+    });
+    modesEl.append(button);
+  }
+  applyMode(modes[0]);
+}
+
+/** 当前生效的环境预设。 */
+let activeMode: SceneMode | null = null;
+
+/** 应用环境预设：同时改变画面与声音配比。 */
+function applyMode(mode: SceneMode): void {
+  activeMode = mode;
+  stage.setMode(mode);
+  audio.applyMode(mode);
+
+  const modes = SCENES.find((scene) => scene.id === current?.id)?.modes ?? [];
+  const index = Math.max(0, modes.findIndex((item) => item.id === mode.id));
+  modesEl.querySelectorAll('.mode-btn').forEach((button, i) => {
+    button.classList.toggle('is-active', i === index);
+  });
+}
+
 function updateSoundButton(): void {
   soundToggle.classList.toggle('is-on', soundOn);
   audioCtl.classList.toggle('is-muted', !soundOn);
@@ -177,6 +279,11 @@ soundToggle.addEventListener('click', async () => {
     }
   }
   updateSoundButton();
+});
+
+mixerToggle.addEventListener('click', () => {
+  mixer.hidden = !mixer.hidden;
+  mixerToggle.classList.toggle('is-on', !mixer.hidden);
 });
 
 volumeEl.addEventListener('input', () => {
