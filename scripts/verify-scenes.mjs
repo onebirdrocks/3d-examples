@@ -17,8 +17,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = Number(process.env.VERIFY_PORT ?? 5199);
+/** 每个分片用不同的端口，同机并行也不会撞车。 */
+const PORT = Number(process.env.VERIFY_PORT ?? 5199 + Math.max(0, Number(process.env.VERIFY_SHARD ?? 0)));
 const BASE = `http://localhost:${PORT}`;
+
+/**
+ * 分片：CI 上把 48 个场景拆成若干份并行跑。
+ * 查逻辑一字不改，只是每个 runner 只跑其中一份 —— 总算力不变，墙钟时间降到 1/N。
+ * 本地不设这两个变量时就是全量检查。
+ */
+const SHARD = Math.max(0, Number(process.env.VERIFY_SHARD ?? 0));
+const SHARDS = Math.max(1, Number(process.env.VERIFY_SHARDS ?? 1));
 
 /** 允许的最低平均亮度（0~1）。极暗的助眠场景会接近这个值。 */
 const MIN_LUMA = 0.004;
@@ -115,8 +124,11 @@ async function main() {
     process.exit(2);
   }
 
-  const ids = await readSceneIds();
-  console.log(`检查 ${ids.length} 个场景…\n`);
+  const all = await readSceneIds();
+  // 按序取模分片：场景数量变化时每一片的负载依然均匀
+  const ids = SHARDS === 1 ? all : all.filter((_, index) => index % SHARDS === SHARD);
+  const shardNote = SHARDS === 1 ? '' : `（分片 ${SHARD}/${SHARDS}）`;
+  console.log(`检查 ${ids.length} 个场景${shardNote}…\n`);
 
   const server = await startServer();
   const browser = await chromium.launch({ executablePath });
