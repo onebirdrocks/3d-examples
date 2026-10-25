@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * 临时工具：给单个场景拍一张大图，用于人工核对构图。
- * 用法：node scripts/shot.mjs <scene-id> [out.png] [waitMs] [width] [height]
+ * 给单个场景拍一张大图，用于人工核对构图。
+ * 用法：node scripts/shot.mjs <scene-id> [out.png] [waitMs] [width] [height] [预设名]
+ * 带预设名时走 scene.html，切到该预设并展开分层混音面板。
  */
 import { chromium } from 'playwright-core';
 import { existsSync } from 'node:fs';
@@ -45,6 +46,9 @@ if (mode) {
   const button = page.locator('.mode-btn', { hasText: mode }).first();
   await button.click();
   await page.waitForTimeout(2600);
+  // 顺便展开分层混音面板，方便核对推子
+  await page.locator('#mixer-toggle').click();
+  await page.waitForTimeout(500);
 } else {
   await page.goto(`${base}/lab.html?scene=${encodeURIComponent(id)}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(waitMs);
