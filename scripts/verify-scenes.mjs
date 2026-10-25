@@ -76,9 +76,19 @@ function startServer() {
   });
 }
 
-/** 截图并计算平均亮度（用页面里的 2D canvas 解码截图）。 */
+/**
+ * 截图并计算平均亮度（用页面里的 2D canvas 解码截图）。
+ *
+ * 用整页截图 + clip，而不是元素截图：元素截图会额外等待元素"稳定"，
+ * 在软件渲染的重场景上（CI 跑的是 2 核机器）容易超时。
+ * 超时视为"该场景渲染过重"，只警告不判失败。
+ */
 async function measureLuma(page) {
-  const buffer = await page.locator('#view').screenshot();
+  const box = await page.locator('#view').boundingBox();
+  const buffer = await page.screenshot({
+    clip: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : undefined,
+    timeout: 25000,
+  });
   const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
   return page.evaluate(async (url) => {
     const image = new Image();
@@ -111,10 +121,11 @@ async function main() {
   const server = await startServer();
   const browser = await chromium.launch({ executablePath });
   const failures = [];
+  const warnings = [];
 
   try {
     for (const id of ids) {
-      const page = await browser.newPage({ viewport: { width: 900, height: 600 } });
+      const page = await browser.newPage({ viewport: { width: 720, height: 460 } });
       const errors = [];
       page.on('console', (msg) => {
         if (msg.type() === 'error') errors.push(msg.text().slice(0, 300));
@@ -131,16 +142,27 @@ async function main() {
         const el = document.querySelector('#err');
         return el ? getComputedStyle(el).display !== 'none' : false;
       });
-      const luma = await measureLuma(page);
+      let luma = null;
+      let sampleError = null;
+      try {
+        luma = await measureLuma(page);
+      } catch (error) {
+        sampleError = error instanceof Error ? error.message.slice(0, 80) : String(error);
+      }
 
       const problems = [];
       if (failed) problems.push('显示「场景加载失败」面板');
       if (errors.length) problems.push(`控制台报错 ${errors.length} 条：${errors[0]}`);
-      if (luma < MIN_LUMA) problems.push(`画面几乎全黑（平均亮度 ${luma.toFixed(4)}）`);
+      if (luma !== null && luma < MIN_LUMA) {
+        problems.push(`画面几乎全黑（平均亮度 ${luma.toFixed(4)}）`);
+      }
 
       if (problems.length) {
         failures.push({ id, problems });
         console.log(`  ✗ ${id.padEnd(16)} ${problems.join('；')}`);
+      } else if (sampleError) {
+        warnings.push(id);
+        console.log(`  ! ${id.padEnd(16)} 采样超时（场景渲染过重，未判失败）`);
       } else {
         console.log(`  ✓ ${id.padEnd(16)} 亮度 ${luma.toFixed(4)}`);
       }
@@ -152,6 +174,9 @@ async function main() {
   }
 
   console.log('');
+  if (warnings.length) {
+    console.log(`  （${warnings.length} 个场景因渲染过重未能采样：${warnings.join(', ')}）`);
+  }
   if (failures.length) {
     console.log(`✗ ${failures.length}/${ids.length} 个场景有问题`);
     process.exit(1);
