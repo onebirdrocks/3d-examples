@@ -87,7 +87,7 @@ async function measureLuma(page) {
   const box = await page.locator('#view').boundingBox();
   const buffer = await page.screenshot({
     clip: box ? { x: box.x, y: box.y, width: box.width, height: box.height } : undefined,
-    timeout: 25000,
+    timeout: 10000,
   });
   const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`;
   return page.evaluate(async (url) => {
@@ -125,7 +125,7 @@ async function main() {
 
   try {
     for (const id of ids) {
-      const page = await browser.newPage({ viewport: { width: 720, height: 460 } });
+      const page = await browser.newPage({ viewport: { width: 640, height: 400 } });
       const errors = [];
       page.on('console', (msg) => {
         if (msg.type() === 'error') errors.push(msg.text().slice(0, 300));
@@ -136,7 +136,7 @@ async function main() {
         waitUntil: 'networkidle',
       });
       // 等场景挂载并渲染几帧
-      await page.waitForTimeout(2200);
+      await page.waitForTimeout(1500);
 
       const failed = await page.evaluate(() => {
         const el = document.querySelector('#err');
