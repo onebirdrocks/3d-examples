@@ -13,6 +13,7 @@ export class FlappyFlight {
   y = 1.55;
   velocity = 0;
   score = 0;
+  distance = 0;
   readonly pipes: FlightPipe[] = [];
   private accumulator = 0;
   private restartWait = 0;
@@ -24,6 +25,7 @@ export class FlappyFlight {
     this.y = 1.55;
     this.velocity = 0;
     this.score = 0;
+    this.distance = 0;
     this.accumulator = 0;
     this.restartWait = 0;
     this.pipes.length = 0;
@@ -69,6 +71,7 @@ export class FlappyFlight {
     this.velocity += f.gravity * f.step;
     this.y += this.velocity * f.step;
     const speed = 0.92 + Math.min(this.score, 24) * 0.012;
+    this.distance += speed * f.step;
     for (const pipe of this.pipes) pipe.x -= speed * f.step;
 
     // 管口比管身稍宽，判定覆盖整个管口；碰撞优先于计分。

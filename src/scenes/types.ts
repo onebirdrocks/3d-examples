@@ -1,4 +1,4 @@
-import type { Object3D, PerspectiveCamera, Texture, WebGLRenderer, AudioListener, Vector3 } from 'three';
+import type { Object3D, PerspectiveCamera, Texture, WebGLRenderer, AudioListener, Vector3, Ray } from 'three';
 import type { AudioAnalysis } from '../core/audio-analysis.js';
 import type { SpatialAudioBus } from '../core/spatial-audio.js';
 
@@ -77,8 +77,8 @@ export interface SceneInstance {
    * 命中时 `info.hit` 为 true，`info.point` 是命中点（场景局部坐标）。
    */
   onPinch?(info: PinchInfo): void;
-  /** 离散主操作，在 XR selectstart 时触发，不依赖完整手部追踪。 */
-  onAction?(): void;
+  /** 离散主操作；XR selectstart 可携带世界坐标射线，用于场景内按钮。 */
+  onAction?(ray?: Ray): void;
   /** 暂停渲染或进入后台时中止正在进行的交互。 */
   onSuspend?(): void;
   /** 需要持续响应操作的场景；减少动态时仍运行必要的游戏逻辑。 */

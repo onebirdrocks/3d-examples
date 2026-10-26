@@ -482,16 +482,16 @@ export class XrExplorer {
     const refSpace = this.stage.renderer.xr.getReferenceSpace();
     const pose = frame && refSpace && event.inputSource.targetRaySpace
       ? frame.getPose(event.inputSource.targetRaySpace, refSpace) : null;
-    if (pose && this.backPanel) {
+    if (pose) {
       this.tmpMatrix.fromArray(pose.transform.matrix);
       this.tmpOrigin.setFromMatrixPosition(this.tmpMatrix);
       this.tmpQuat.setFromRotationMatrix(this.tmpMatrix);
       this.tmpDir.set(0, 0, -1).applyQuaternion(this.tmpQuat).normalize();
       this.raycaster.set(this.tmpOrigin, this.tmpDir);
       this.raycaster.far = 10;
-      if (this.raycaster.intersectObject(this.backPanel, false).length) return;
+      if (this.backPanel && this.raycaster.intersectObject(this.backPanel, false).length) return;
     }
-    instance.onAction();
+    instance.onAction(pose ? this.raycaster.ray : undefined);
   };
 
   private readonly handleSelect = (event: XRInputSourceEvent) => {

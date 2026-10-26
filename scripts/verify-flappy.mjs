@@ -32,13 +32,13 @@ try {
     const frames = [60, 90, 120].map((hz) => {
       const model = new FlappyFlight(() => 0.5); model.action();
       for (let i = 0; i < hz / 2; i++) model.advance(1 / hz);
-      return [model.y, model.velocity, model.pipes[0].x];
+      return [model.y, model.velocity, model.pipes[0].x, model.distance];
     });
     results.refreshRates = frames.every((values) => values.every((value, i) => Math.abs(value - frames[0][i]) < 1e-9));
     const paused = new FlappyFlight(() => 0.5); paused.action(); paused.advance(0.1); paused.pause();
-    const before = JSON.stringify([paused.y, paused.velocity, paused.pipes]);
+    const before = JSON.stringify([paused.y, paused.velocity, paused.pipes, paused.distance]);
     paused.advance(30);
-    results.pauseFreezes = paused.phase === 'paused' && before === JSON.stringify([paused.y, paused.velocity, paused.pipes]);
+    results.pauseFreezes = paused.phase === 'paused' && before === JSON.stringify([paused.y, paused.velocity, paused.pipes, paused.distance]);
     paused.action(); results.resume = paused.phase === 'playing' && paused.velocity === FLIGHT.impulse;
     const scoring = new FlappyFlight(() => 0.5); scoring.action(); scoring.pipes[0].x = -1.2;
     scoring.advance(1 / 60); scoring.advance(1 / 60);
@@ -103,6 +103,32 @@ try {
   assert.equal(await hud.getAttribute('data-phase'), 'ready');
   console.log('✓ 五种屏幕尺寸、切换场景时清理与重入');
 
+  const viewToggle = page.getByRole('button', { name: '第一人称视角', exact: true });
+  await page.getByRole('button', { name: '开始飞行', exact: true }).click();
+  await viewToggle.click();
+  assert.equal(await hud.getAttribute('data-view'), 'first-person');
+  assert.equal(await hud.getAttribute('data-phase'), 'paused');
+  assert.equal(await viewToggle.getAttribute('aria-pressed'), 'true');
+  for (const [width, height] of [[320, 740], [390, 844], [844, 390], [1280, 900]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForTimeout(100);
+    assert.ok(await page.evaluate(() => {
+      const box = document.querySelector('.flappy-controls').getBoundingClientRect();
+      return box.left >= 0 && box.right <= innerWidth;
+    }), `第一人称 ${width}×${height} 操作布局`);
+    if (screenshots) await page.screenshot({ path: resolve(screenshots, `flappy-first-person-${width}.png`) });
+  }
+  await page.reload({ waitUntil: 'networkidle' });
+  assert.equal(await hud.getAttribute('data-view'), 'first-person');
+  await page.getByRole('button', { name: '开始飞行', exact: true }).click();
+  if (screenshots) await page.screenshot({ path: resolve(screenshots, 'flappy-first-person-playing.png') });
+  await page.getByRole('button', { name: '暂停', exact: true }).click();
+  await page.locator('#scene-title').click(); await page.keyboard.press('KeyV');
+  assert.equal(await hud.getAttribute('data-view'), 'side');
+  assert.equal(await hud.getAttribute('data-phase'), 'paused');
+  await page.reload({ waitUntil: 'networkidle' });
+  console.log('✓ 第一人称/侧视切换先暂停、视角持久化、V 快捷键和两种视角布局');
+
   await page.locator('#experience-settings summary').click();
   await page.locator('#animation-toggle').click();
   assert.equal(await page.getByRole('button', { name: '开始飞行', exact: true }).isEnabled(), false);
@@ -125,29 +151,89 @@ try {
     const definition = (await import('/src/scenes/games/flappy-bird.ts')).default;
     const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 400;
     const previousRandom = Math.random;
+    const previousView = localStorage.getItem('lumen-atlas:flappy-bird:view');
     let stage;
     try {
       localStorage.removeItem('lumen-atlas:flappy-bird:best');
+      localStorage.setItem('lumen-atlas:flappy-bird:view', JSON.stringify('first-person'));
       Math.random = () => 0.5;
       stage = new Stage({ canvas });
       const instance = await definition.create(stage.context); stage.mount(instance, definition);
+      const firstGate = instance.root.getObjectByName('flappy-flight-gate-0');
+      const initialDepth = firstGate.position.z;
+      let forwardMotion = false;
       instance.onAction();
       for (let i = 0; i < 600; i++) {
         instance.update(i / 120, 1 / 120, stage.context);
         if ((i + 1) % 100 === 0) instance.onAction();
+        if (i === 99) forwardMotion = firstGate.position.z > initialDepth;
       }
-      return Number(localStorage.getItem('lumen-atlas:flappy-bird:best'));
-    } finally { Math.random = previousRandom; stage?.dispose(); }
+      return { best: Number(localStorage.getItem('lumen-atlas:flappy-bird:best')), forwardMotion,
+        levelCamera: instance.camera.quaternion.equals(new (await import('/node_modules/.vite/deps/three.js')).Quaternion()) };
+    } finally {
+      Math.random = previousRandom; stage?.dispose();
+      if (previousView === null) localStorage.removeItem('lumen-atlas:flappy-bird:view'); else localStorage.setItem('lumen-atlas:flappy-bird:view', previousView);
+    }
   });
-  assert.ok(earnedBest >= 2, `实际穿过管道后写入最高分，得到 ${earnedBest}`);
+  assert.ok(earnedBest.best >= 2 && earnedBest.forwardMotion && earnedBest.levelCamera, `第一人称实际飞行和计分 ${JSON.stringify(earnedBest)}`);
   await page.reload({ waitUntil: 'networkidle' });
-  assert.ok((await page.locator('.flappy-status').innerText()).endsWith(`最高 ${earnedBest}`));
-  console.log('✓ 实际飞行穿过两对管道，刷新后保留所得最高分');
+  assert.ok((await page.locator('.flappy-status').innerText()).endsWith(`最高 ${earnedBest.best}`));
+  console.log('✓ 第一人称障碍迎面靠近、保持镜头水平、飞过两对管道后刷新保留最高分');
+
+  const firstPerson = await page.evaluate(async () => {
+    const definition = (await import('/src/scenes/games/flappy-bird.ts')).default;
+    const THREE = await import('/node_modules/.vite/deps/three.js');
+    const previousView = localStorage.getItem('lumen-atlas:flappy-bird:view');
+    localStorage.setItem('lumen-atlas:flappy-bird:view', JSON.stringify('first-person'));
+    const tracked = new THREE.ArrayCamera([new THREE.PerspectiveCamera()]);
+    tracked.position.set(0.1, 1.72, 0.2); tracked.updateMatrixWorld(true);
+    const canvas = document.createElement('canvas');
+    const context = { isXR: true, width: 1280, height: 900,
+      renderer: { domElement: canvas, xr: { getSession: () => ({ environmentBlendMode: 'opaque', visibilityState: 'visible' }), getCamera: () => tracked } } };
+    const instance = await definition.create(context);
+    const corridor = instance.root.getObjectByName('flappy-first-person-world');
+    const side = instance.root.getObjectByName('flappy-side-view');
+    const gate = instance.root.getObjectByName('flappy-flight-gate-0');
+    const results = { immersiveOrigin: instance.immersive && instance.root.position.length() === 0,
+      forwardDepth: corridor.visible && !side.visible && gate.position.z < -10,
+      eyeHeight: Math.abs(corridor.position.y + 1.55 * 3 - tracked.position.y) < 1e-8 };
+    const position = new THREE.Vector3(0.2, 1.8, 0.3), rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.12, 0.3, 0.17));
+    instance.camera.position.copy(position); instance.camera.quaternion.copy(rotation);
+    instance.update(0, 0, context);
+    results.naturalTracking = instance.camera.position.equals(position) && instance.camera.quaternion.equals(rotation);
+    function selectControl(name) {
+      instance.root.updateWorldMatrix(true, true);
+      const target = instance.root.getObjectByName(name).getWorldPosition(new THREE.Vector3());
+      const origin = instance.camera.getWorldPosition(new THREE.Vector3());
+      instance.onAction(new THREE.Ray(origin, target.sub(origin).normalize()));
+    }
+    selectControl('flappy-view-first-person');
+    results.xrViewSwitch = side.visible && !corridor.visible;
+    selectControl('flappy-view-side');
+    results.xrSwitchBack = corridor.visible && !side.visible;
+    const hud = instance.camera.getObjectByName('flappy-first-person-hud');
+    const message = hud.children.find((mesh) => mesh.geometry?.parameters.width === 2.8);
+    results.switchDoesNotFlap = message.visible;
+    instance.onAction(); selectControl('flappy-pause-first-person');
+    results.xrPause = message.visible;
+    instance.onAction();
+    results.xrResume = !message.visible;
+    instance.dispose();
+    instance.onAction();
+    const arContext = { ...context, renderer: { domElement: canvas, xr: { ...context.renderer.xr, getSession: () => ({ environmentBlendMode: 'alpha-blend', visibilityState: 'visible' }) } } };
+    const ar = await definition.create(arContext);
+    results.arKeepsBoard = ar.root.getObjectByName('flappy-side-view').visible && ar.camera.parent === null;
+    ar.dispose();
+    if (previousView === null) localStorage.removeItem('lumen-atlas:flappy-bird:view'); else localStorage.setItem('lumen-atlas:flappy-bird:view', previousView);
+    return results;
+  });
+  assert.ok(Object.values(firstPerson).every(Boolean), JSON.stringify(firstPerson));
+  console.log('✓ 第一人称纵深和眼高、保留头部姿态、空间按钮切换/暂停/恢复与 AR 侧视回退');
 
   const xrResults = await page.evaluate(async () => {
     const { XrExplorer } = await import('/src/xr/explorer.ts');
     const THREE = await import('/node_modules/.vite/deps/three.js');
-    let listener, session, actions = 0;
+    let listener, session, actions = 0, lastActionRay;
     const hands = [new THREE.Group(), new THREE.Group()];
     const identity = new THREE.Matrix4().toArray();
     let ray = identity;
@@ -161,12 +247,13 @@ try {
     Object.defineProperty(navigator, 'xr', { configurable: true, value: { async requestSession() {
       session = Object.assign(new EventTarget(), { enabledFeatures: [], visibilityState: 'visible', async end() { xr.isPresenting = false; this.dispatchEvent(new Event('end')); } }); return session;
     } } });
-    const definition = { id: 'game-fixture', title: 'Game', create() { return { root: new THREE.Group(), camera: new THREE.PerspectiveCamera(), update() {}, dispose() {}, onAction() { actions++; } }; } };
+    const definition = { id: 'game-fixture', title: 'Game', create() { return { root: new THREE.Group(), camera: new THREE.PerspectiveCamera(), update() {}, dispose() {}, onAction(ray) { actions++; lastActionRay = ray?.clone(); } }; } };
     const explorer = new XrExplorer({ stage, scenes: [], thumbnails: new Map() });
     await explorer.enter(definition); listener(0, 0.5); await new Promise((r) => setTimeout(r, 0));
     const inputSource = { targetRaySpace: {}, targetRayMode: 'transient-pointer' }; // 无 hand / gamepad
     const emit = (name) => session.dispatchEvent(Object.assign(new Event(name), { inputSource, frame }));
     emit('selectstart'); const immediate = actions === 1;
+    const inputRay = lastActionRay?.origin.length() === 0 && lastActionRay.direction.equals(new THREE.Vector3(0, 0, -1));
     emit('select'); emit('selectend');
     hands[0].dispatchEvent({ type: 'pinchstart' }); hands[0].dispatchEvent({ type: 'pinchend' });
     const noDuplicate = actions === 1;
@@ -177,7 +264,7 @@ try {
     const camera = new THREE.PerspectiveCamera(); camera.lookAt(back.position); camera.updateMatrixWorld(true); ray = camera.matrixWorld.toArray();
     emit('selectstart'); const backDoesNotFlap = actions === 1;
     await explorer.exit(); emit('selectstart');
-    return { immediate, noDuplicate, hiddenIgnored, backDoesNotFlap, cleaned: actions === 1 && hostScene.children.length === 0 };
+    return { immediate, inputRay, noDuplicate, hiddenIgnored, backDoesNotFlap, cleaned: actions === 1 && hostScene.children.length === 0 };
   });
   assert.ok(Object.values(xrResults).every(Boolean), JSON.stringify(xrResults));
   assert.deepEqual(errors, []);
