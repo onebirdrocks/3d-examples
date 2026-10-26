@@ -36,68 +36,102 @@
           </h1>
         </div>
 
-        <div class="viewer__actions">
-          <div class="audio-ctl" id="audio-ctl" hidden>
-            <button class="icon-btn" id="sound-toggle" title="环境音" aria-label="开关环境音">
-              <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path
-                  d="M4 8v4h2.5L10 15V5L6.5 8H4z"
-                  fill="currentColor"
-                  stroke="currentColor"
-                  stroke-width="1.2"
-                  stroke-linejoin="round"
-                />
-                <path
-                  id="sound-wave"
-                  d="M13 7.2c.9.8 1.4 1.8 1.4 2.8s-.5 2-1.4 2.8M15.4 5c1.5 1.3 2.4 3 2.4 5s-.9 3.7-2.4 5"
-                  stroke="currentColor"
-                  stroke-width="1.3"
-                  stroke-linecap="round"
-                />
-              </svg>
-            </button>
-            <input
-              class="volume"
-              id="volume"
-              type="range"
-              min="0"
-              max="100"
-              value="55"
-              aria-label="环境音音量"
-            />
-            <button
-              class="icon-btn"
-              id="mixer-toggle"
-              title="分层混音"
-              aria-label="分层混音"
-              hidden
-            >
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                <path
-                  d="M4 4v12M10 4v12M16 4v12"
-                  stroke="currentColor"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                />
-                <circle cx="4" cy="8" r="2" fill="currentColor" />
-                <circle cx="10" cy="12" r="2" fill="currentColor" />
-                <circle cx="16" cy="6" r="2" fill="currentColor" />
-              </svg>
-            </button>
+        <div class="viewer__tools">
+          <div class="viewer__actions">
+            <div class="audio-ctl" id="audio-ctl" hidden>
+              <button class="icon-btn" id="sound-toggle" title="环境音" aria-label="开关环境音">
+                <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 8v4h2.5L10 15V5L6.5 8H4z"
+                    fill="currentColor"
+                    stroke="currentColor"
+                    stroke-width="1.2"
+                    stroke-linejoin="round"
+                  />
+                  <path
+                    id="sound-wave"
+                    d="M13 7.2c.9.8 1.4 1.8 1.4 2.8s-.5 2-1.4 2.8M15.4 5c1.5 1.3 2.4 3 2.4 5s-.9 3.7-2.4 5"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                    stroke-linecap="round"
+                  />
+                </svg>
+              </button>
+              <input
+                class="volume"
+                id="volume"
+                type="range"
+                min="0"
+                max="100"
+                value="55"
+                aria-label="环境音音量"
+              />
+              <button
+                class="icon-btn"
+                id="mixer-toggle"
+                title="分层混音"
+                aria-label="分层混音"
+                aria-expanded="false"
+                aria-controls="mixer"
+                hidden
+              >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path
+                    d="M4 4v12M10 4v12M16 4v12"
+                    stroke="currentColor"
+                    stroke-width="1.4"
+                    stroke-linecap="round"
+                  />
+                  <circle cx="4" cy="8" r="2" fill="currentColor" />
+                  <circle cx="10" cy="12" r="2" fill="currentColor" />
+                  <circle cx="16" cy="6" r="2" fill="currentColor" />
+                </svg>
+              </button>
+            </div>
+            <button class="btn btn--ghost" id="enter-ar" aria-describedby="xr-status" disabled>放到真实空间</button>
+            <button class="btn btn--primary" id="enter-xr" aria-describedby="xr-status" disabled>沉浸模式</button>
           </div>
-          <button class="btn btn--ghost" id="enter-ar" disabled>放到真实空间</button>
-          <button class="btn btn--primary" id="enter-xr" disabled>沉浸模式</button>
-        </div>
+          <p class="viewer__xr-status" id="xr-status" role="status">正在检查空间体验支持情况…</p>
+          <div class="viewer__extras">
+            <button class="text-control" id="favorite-scene" aria-pressed="false">收藏场景</button>
+            <span class="session-countdown" id="session-countdown" aria-live="off"></span>
+            <details class="experience-settings" id="experience-settings">
+              <summary>体验设置</summary>
+              <div class="settings-panel">
+                <button class="text-control" id="close-settings">关闭设置</button>
+                <label>画质<select id="quality-select"><option value="low">省电</option><option value="balanced">均衡</option><option value="high">清晰</option></select></label>
+                <button class="btn btn--ghost" id="animation-toggle" aria-pressed="false">暂停画面</button>
+                <label><span>减少动态</span><input id="reduced-motion" type="checkbox" /></label>
+                <label><span>后台继续声音</span><input id="background-audio" type="checkbox" checked /></label>
+                <label>定时结束<select id="session-duration"><option value="0">不限时</option><option value="5">5 分钟</option><option value="10">10 分钟</option><option value="20">20 分钟</option><option value="30">30 分钟</option><option value="60">60 分钟</option></select></label>
+                <p class="settings-hint">结束前10秒声音逐渐减弱，时间到后静音并暂停画面。</p>
+                <button class="btn btn--ghost" id="hide-controls">隐藏控制栏</button>
+                <p class="settings-hint">轻点画面、点击显示按钮或按 Esc 可恢复控制栏。</p>
+              </div>
+            </details>
+          </div>
 
-        <div class="mixer" id="mixer" hidden>
-          <p class="mixer__title">分层混音</p>
-          <div class="mixer__rows" id="mixer-rows"></div>
+          <div class="mixer" id="mixer" hidden>
+            <p class="mixer__title">分层混音</p>
+            <div class="mixer__rows" id="mixer-rows"></div>
+          </div>
         </div>
 
         <div class="modes" id="modes" hidden></div>
       </div>
 
-      <div class="xr-banner" id="xr-banner"></div>
+      <div class="xr-banner" id="xr-banner" role="status"></div>
+      <button class="btn btn--ghost restore-controls" id="show-controls" hidden>显示控制栏</button>
+      <section class="viewer-message" id="viewer-error" role="alert" hidden>
+        <h2 id="viewer-error-title">场景暂不可用</h2>
+        <p id="viewer-error-description"></p>
+        <div class="message-actions"><button class="btn btn--primary" id="retry-scene">重试</button><a class="btn btn--ghost" href="./index.html">返回场景索引</a></div>
+      </section>
+      <section class="viewer-message" id="session-complete" role="status" hidden>
+        <h2>本次体验已结束</h2>
+        <p>声音已关闭，画面已暂停。愿这段光影给你片刻安静。</p>
+        <div class="message-actions"><button class="btn btn--primary" id="continue-session">继续体验</button><a class="btn btn--ghost" href="./index.html">返回场景索引</a></div>
+      </section>
 
       <div class="viewer__bottom">
         <div class="viewer__info">

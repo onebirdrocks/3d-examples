@@ -665,7 +665,9 @@ function createForestStream(ctx: SceneContext): SceneInstance {
 
   // ── 空间音源：溪水声从画面左侧的溪流处传来 ──────────────────────
   const stream = attachSpatialSource(root, ctx.listener, {
-      reverbNode: ctx.reverb,
+    reverbNode: ctx.reverb,
+    enabled: !ctx.isPreview,
+    controller: ctx.spatialAudio,
     url: assetUrl('audio/sfx-stream.mp3'),
     position: [-1.6, 0.35, 0.4],
     volume: 0.45,

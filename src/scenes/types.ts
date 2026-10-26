@@ -1,11 +1,13 @@
 import type { Object3D, PerspectiveCamera, Texture, WebGLRenderer, AudioListener, Vector3 } from 'three';
 import type { AudioAnalysis } from '../core/audio-analysis.js';
+import type { SpatialAudioBus } from '../core/spatial-audio.js';
 
 /**
  * 场景可用的环境辅助。核心层创建后通过 SceneContext 传给每个场景。
  * 场景只允许使用这里的资源，不要自己创建 PMREM / IBL。
  */
 export interface SceneEnvironment {
+  dispose?(): void;
   /**
    * 由 RoomEnvironment 生成的 PMREM 环境贴图（IBL）。
    * 赋给材质时用 `scene.environment = ctx.env.envMap`，或直接作为材质 envMap。
@@ -21,6 +23,8 @@ export interface SceneEnvironment {
 
 /** 场景创建时拿到的上下文。 */
 export interface SceneContext {
+  readonly isPreview?: boolean;
+  readonly spatialAudio?: SpatialAudioBus;
   /** 渲染器实例（用于生成纹理、读取尺寸、设置像素比等）。 */
   readonly renderer: WebGLRenderer;
   /** 环境辅助（IBL、灯组、地面）。 */

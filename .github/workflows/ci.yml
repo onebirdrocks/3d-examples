@@ -34,9 +34,20 @@ jobs:
       - name: 类型检查
         run: npm run typecheck
 
+      - name: 静态预览完整性检查
+        run: npm run thumbnails:check
+
       - name: 场景回归检查
         # 逐个打开全部场景，检查控制台报错与黑屏
         run: npm run verify
         env:
           VERIFY_SHARD: ${{ matrix.shard }}
           VERIFY_SHARDS: 6
+
+      - name: 场景页交互回归检查
+        if: matrix.shard == 0
+        run: npm run verify:viewer
+
+      - name: 整体体验回归检查
+        if: matrix.shard == 0
+        run: npm run verify:experience

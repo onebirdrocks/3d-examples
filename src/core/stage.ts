@@ -3,7 +3,8 @@ import { createEnvironment } from './environment.js';
 import { applyFraming } from './framing.js';
 import { AudioAnalysis } from './audio-analysis.js';
 import { LightingRig } from './lighting.js';
-import { createReverbBus } from './audio.js';
+import { createReverbBus, type ReverbBus } from './audio.js';
+import { SpatialAudioBus } from './spatial-audio.js';
 import type {
   SceneContext,
   SceneDefinition,
@@ -36,10 +37,11 @@ export class Stage {
   readonly audio = new AudioAnalysis();
   /** 空间音频监听器：每帧跟随当前相机（XR 下是头显位置）。 */
   readonly listener = new THREE.AudioListener();
+  readonly spatialAudio = new SpatialAudioBus();
   /** 光照装置：自动曝光 / 实时环境反射 / 间接光探针。 */
   private readonly rig: LightingRig;
   /** 共享混响总线（空间音源接上去就有房间感）。 */
-  private readonly reverb: AudioNode;
+  private readonly reverb: ReverbBus;
 
   private instance: SceneInstance | null = null;
   private readonly timer = new THREE.Timer();
@@ -48,6 +50,13 @@ export class Stage {
   private readonly maxPixelRatio: number;
   private resizeObserver: ResizeObserver | null = null;
   private running = false;
+  private wantsToRun = false;
+  private paused = false;
+  private reducedMotion = false;
+  private contextLost = false;
+  private soundEnabled = true;
+  private soundVolume = 0.55;
+  private sessionGain = 1;
   private xrActive = false;
   private manualPlacement = false;
   private updateErrorReported = false;
@@ -78,7 +87,12 @@ export class Stage {
     this.env = createEnvironment(this.renderer);
     this.hostScene.environment = this.env.envMap;
     this.rig = new LightingRig(this.renderer, this.hostScene);
-    this.reverb = createReverbBus(this.listener.context);
+    this.reverb = createReverbBus(this.listener.context, 0.32, this.listener.getInput());
+    this.syncSoundGain();
+    this.timer.connect(document);
+    document.addEventListener('visibilitychange', this.syncLoop);
+    this.renderer.xr.addEventListener('sessionend', this.syncLoop);
+    canvasEventSetup(this.renderer.domElement, this.handleContextLost, this.handleContextRestored);
 
     this.fallbackCamera = new THREE.PerspectiveCamera(55, 1, 0.05, 300);
     this.fallbackCamera.position.set(0, 1.5, 4.5);
@@ -108,7 +122,53 @@ export class Stage {
 
   setQuality(value: number): void {
     this.quality = THREE.MathUtils.clamp(value, 0.4, 2);
+    this.resize();
   }
+
+  get visualPaused(): boolean { return this.paused || this.reducedMotion; }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    this.syncLoop();
+    this.renderOnce();
+  }
+
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+    this.syncLoop();
+    this.renderOnce();
+  }
+
+  setSoundEnabled(enabled: boolean): void {
+    this.soundEnabled = enabled;
+    this.spatialAudio.setEnabled(enabled);
+    this.syncSoundGain();
+  }
+
+  setSoundVolume(volume: number): void {
+    this.soundVolume = THREE.MathUtils.clamp(volume, 0, 1);
+    this.syncSoundGain();
+  }
+
+  setSessionGain(gain: number): void {
+    this.sessionGain = THREE.MathUtils.clamp(gain, 0, 1);
+    this.syncSoundGain();
+  }
+
+  private syncSoundGain(): void {
+    this.listener.setMasterVolume(this.soundEnabled ? this.soundVolume * this.sessionGain : 0);
+  }
+
+  private readonly handleContextLost = (event: Event) => {
+    event.preventDefault();
+    this.contextLost = true;
+    this.syncLoop();
+    window.dispatchEvent(new Event('stage-renderererror'));
+  };
+
+  private readonly handleContextRestored = () => {
+    window.dispatchEvent(new Event('stage-renderererror'));
+  };
 
   /** 当前挂载的场景实例。 */
   get current(): SceneInstance | null {
@@ -134,6 +194,7 @@ export class Stage {
       audio: this.audio,
       listener: this.listener,
       reverb: this.reverb,
+      spatialAudio: this.spatialAudio,
     };
   }
 
@@ -142,6 +203,7 @@ export class Stage {
     this.unmount();
 
     this.instance = instance;
+    this.updateErrorReported = false;
     this.hostScene.add(instance.root);
     this.applyPlacement();
     this.applyFraming(instance);
@@ -149,6 +211,10 @@ export class Stage {
     this.rigSoftness = def?.lighting?.softShadows ?? 0;
     this.applySoftShadows(instance);
     if (this.activeMode) this.instance.setMode?.(this.activeMode);
+    if (this.visualPaused) {
+      instance.update(this.elapsedTime, 0, this.context);
+      this.renderOnce();
+    }
   }
 
   /**
@@ -158,6 +224,10 @@ export class Stage {
   setMode(mode: SceneMode | null): void {
     this.activeMode = mode;
     if (mode) this.instance?.setMode?.(mode);
+  }
+
+  get currentMode(): SceneMode | null {
+    return this.activeMode;
   }
 
   /** 按场景声明放大阴影采样半径，让硬边阴影变软。 */
@@ -182,6 +252,7 @@ export class Stage {
   setXRActive(active: boolean): void {
     this.xrActive = active;
     this.applyPlacement();
+    this.syncLoop();
   }
 
   private applyPlacement(): void {
@@ -205,6 +276,7 @@ export class Stage {
   unmount(): void {
     if (!this.instance) return;
     this.hostScene.remove(this.instance.root);
+    this.spatialAudio.clear(this.instance.root);
     this.instance.dispose();
     this.instance = null;
     this.rig.teardown();
@@ -220,16 +292,29 @@ export class Stage {
 
   /** 启动主循环（使用 renderer.setAnimationLoop 以兼容 WebXR）。 */
   start(): void {
-    if (this.running) return;
-    this.running = true;
-    this.timer.reset();
-    this.renderer.setAnimationLoop(this.frame);
+    this.wantsToRun = true;
+    this.syncLoop();
   }
 
   stop(): void {
-    if (!this.running) return;
-    this.running = false;
-    this.renderer.setAnimationLoop(null);
+    this.wantsToRun = false;
+    this.syncLoop();
+  }
+
+  private readonly syncLoop = () => {
+    const xr = this.xrActive || this.renderer.xr.isPresenting;
+    const shouldRun = this.wantsToRun && !this.contextLost && (xr || (!document.hidden && !this.visualPaused));
+    if (shouldRun === this.running) return;
+    this.running = shouldRun;
+    this.timer.reset();
+    this.renderer.setAnimationLoop(shouldRun ? this.frame : null);
+  };
+
+  renderOnce(): void {
+    if (this.contextLost || this.renderer.xr.isPresenting) return;
+    const camera = this.instance?.camera ?? this.fallbackCamera;
+    this.syncListener(camera);
+    this.renderer.render(this.hostScene, camera);
   }
 
   /**
@@ -244,7 +329,7 @@ export class Stage {
   private readonly frame = () => {
     this.timer.update();
     const delta = Math.min(this.timer.getDelta(), 0.05);
-    this.elapsedTime += delta;
+    if (!this.visualPaused) this.elapsedTime += delta;
 
     this.audio.update(delta, this.elapsedTime);
 
@@ -253,7 +338,7 @@ export class Stage {
     }
 
     const instance = this.instance;
-    if (instance) {
+    if (instance && !this.visualPaused) {
       try {
         instance.update(this.elapsedTime, delta, this.context);
       } catch (error) {
@@ -261,6 +346,7 @@ export class Stage {
         if (!this.updateErrorReported) {
           this.updateErrorReported = true;
           console.error('[stage] 场景 update 抛出异常', error);
+          window.dispatchEvent(new Event('stage-sceneerror'));
         }
       }
     }
@@ -302,7 +388,7 @@ export class Stage {
     const width = Math.max(1, canvas.clientWidth || window.innerWidth);
     const height = Math.max(1, canvas.clientHeight || window.innerHeight);
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.maxPixelRatio) * Math.min(1, this.quality));
     this.renderer.setSize(width, height, false);
 
     const camera = this.instance?.camera ?? this.fallbackCamera;
@@ -311,6 +397,7 @@ export class Stage {
 
     // 画幅变化后重新计算取景距离
     if (this.instance) this.applyFraming(this.instance);
+    if (this.visualPaused) this.renderOnce();
   }
 
   dispose(): void {
@@ -318,6 +405,20 @@ export class Stage {
     this.unmount();
     this.resizeObserver?.disconnect();
     window.removeEventListener('resize', this.handleWindowResize);
+    document.removeEventListener('visibilitychange', this.syncLoop);
+    this.renderer.xr.removeEventListener('sessionend', this.syncLoop);
+    this.timer.dispose();
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.handleContextLost);
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.handleContextRestored);
+    this.spatialAudio.clear();
+    this.rig.dispose();
+    this.env.dispose?.();
+    this.reverb.dispose();
     this.renderer.dispose();
   }
+}
+
+function canvasEventSetup(canvas: HTMLCanvasElement, onLost: (event: Event) => void, onRestored: () => void): void {
+  canvas.addEventListener('webglcontextlost', onLost);
+  canvas.addEventListener('webglcontextrestored', onRestored);
 }

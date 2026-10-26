@@ -7,7 +7,7 @@
     <title>Lumen Atlas · 光影图谱</title>
     <meta
       name="description"
-      content="十种实时 3D 渲染效果，一套 three.js 代码同时跑在网页浏览器与 Apple Vision Pro 上。"
+      content="探索实时 3D 光影场景，在网页中欣赏、静心和助眠，兼容设备可进入沉浸体验。"
     />
     <link
       rel="icon"
@@ -37,26 +37,39 @@
 
     <main>
       <section class="hero">
-        <p class="hero__eyebrow">WebXR · Apple Vision Pro Ready</p>
-        <h1 class="hero__title">把 3D 效果<br />放进真实空间</h1>
+        <p class="hero__eyebrow">Lumen Atlas · 实时光影与空间体验</p>
+        <h1 class="hero__title">探索 3D 光影<br />走进不同的世界</h1>
         <p class="hero__lede">
-          十种实时渲染效果，一套 three.js 代码。桌面浏览器里拖动查看；戴上 Vision Pro
-          后，它们会真实地环绕在你身边，伸手即可切换。
+          <span data-scene-count></span> 个实时场景，从星河、雨夜到一间静室。直接在网页中探索，
+          或选择一段安静的光影陪你静心、助眠。兼容头显可进一步进入沉浸体验。
         </p>
         <div class="hero__actions">
-          <button class="btn btn--primary" id="enter-xr" disabled>进入沉浸空间浏览</button>
+          <button class="btn btn--primary" id="scroll-gallery">浏览场景</button>
           <a class="btn btn--ghost" href="./scene.html?id=breathing">开始静心冥想</a>
-          <button class="btn btn--ghost" id="scroll-gallery">浏览场景索引</button>
+          <button class="btn btn--ghost" id="enter-xr" aria-describedby="xr-note" disabled>进入沉浸体验</button>
         </div>
-        <p class="hero__note" id="xr-note"></p>
+        <p class="hero__note" id="xr-note" role="status"></p>
       </section>
 
       <section class="gallery" id="gallery">
         <div class="section-head">
           <h2>场景索引</h2>
-          <div class="filters" id="filters"></div>
+          <label class="gallery-search">搜索场景<input id="scene-search" type="search" maxlength="120" placeholder="搜索名称、氛围或标签" /></label>
+        </div>
+        <div class="gallery-toolbar">
+          <div class="collections" role="group" aria-label="浏览范围">
+            <button class="filter" data-collection="all" aria-pressed="true">全部场景</button>
+            <button class="filter" data-collection="favorites" aria-pressed="false">我的收藏</button>
+            <button class="filter" data-collection="recent" aria-pressed="false">最近使用</button>
+          </div>
+          <div class="filters" id="filters" role="group" aria-label="场景分类"></div>
+          <p id="result-count" role="status"></p>
         </div>
         <div class="grid" id="grid"></div>
+        <div class="gallery-empty" id="gallery-empty" hidden>
+          <p>这里还没有匹配的场景。可以调整关键词，或先收藏、体验喜欢的场景。</p>
+          <button class="btn btn--ghost" id="reset-filters">浏览全部场景</button>
+        </div>
       </section>
     </main>
 
@@ -65,7 +78,7 @@
       <span class="site-footer__links">
         <a href="./webgpu.html">WebGPU / TSL 实验场</a>
         <a href="./lab.html">场景实验室</a>
-        <span id="footer-status">缩略图生成中…</span>
+        <span id="footer-status"></span>
       </span>
     </footer>
 

@@ -13,6 +13,7 @@ export interface ThumbnailOptions {
   warmupFrames?: number;
   /** 传给场景的画质系数，缩略图用较低画质以加快生成。 */
   quality?: number;
+  mimeType?: 'image/png' | 'image/webp';
 }
 
 /**
@@ -80,6 +81,7 @@ export class ThumbnailBaker {
       audio: this.analysis,
       listener: this.listener,
       reverb: this.reverb,
+      isPreview: true,
     };
   }
 
@@ -87,44 +89,45 @@ export class ThumbnailBaker {
   async bake(def: SceneDefinition, options: ThumbnailOptions = {}): Promise<string> {
     const warmup = options.warmupFrames ?? this.warmupFrames;
     const instance = await def.create(this.context);
+    try {
+      this.hostScene.add(instance.root);
+      instance.root.position.set(0, 0, 0);
+      instance.root.rotation.set(0, 0, 0);
 
-    this.hostScene.add(instance.root);
-    instance.root.position.set(0, 0, 0);
-    instance.root.rotation.set(0, 0, 0);
+      // 用场景自己的相机取景，保证缩略图与网页查看器构图一致
+      const camera = instance.camera;
+      camera.aspect = this.camera.aspect;
+      camera.updateProjectionMatrix();
+      if (instance.framing && !instance.ownsCamera) {
+        applyFraming(camera, instance.framing);
+      }
 
-    // 用场景自己的相机取景，保证缩略图与网页查看器构图一致
-    const camera = instance.camera;
-    camera.aspect = this.camera.aspect;
-    camera.updateProjectionMatrix();
-    if (instance.framing && !instance.ownsCamera) {
-      applyFraming(camera, instance.framing);
+      // 缩略图沿用场景声明的光照偏好；自动曝光在这里直接对齐（没有时间慢慢适应）
+      this.rig.configure(def);
+      this.renderer.toneMappingExposure = def.lighting?.exposure ?? 1;
+
+      for (let i = 0; i < warmup; i += 1) {
+        const t = i / 60;
+        instance.update(t, 1 / 60, this.context);
+        this.renderer.render(this.hostScene, camera);
+      }
+
+      if (def.lighting?.autoExposure) {
+        this.rig.snapExposure(camera);
+        this.renderer.render(this.hostScene, camera);
+      }
+      return this.canvas.toDataURL(options.mimeType ?? 'image/png', 0.84);
+    } finally {
+      this.rig.teardown();
+      this.hostScene.remove(instance.root);
+      instance.dispose();
     }
-
-    // 缩略图沿用场景声明的光照偏好；自动曝光在这里直接对齐（没有时间慢慢适应）
-    this.rig.configure(def);
-    this.renderer.toneMappingExposure = def.lighting?.exposure ?? 1;
-
-    for (let i = 0; i < warmup; i += 1) {
-      const t = i / 60;
-      instance.update(t, 1 / 60, this.context);
-      this.renderer.render(this.hostScene, camera);
-    }
-
-    if (def.lighting?.autoExposure) {
-      this.rig.snapExposure(camera);
-      this.renderer.render(this.hostScene, camera);
-    }
-    this.rig.teardown();
-
-    const url = this.canvas.toDataURL('image/png');
-
-    this.hostScene.remove(instance.root);
-    instance.dispose();
-
-    return url;
   }
 
   dispose(): void {
     this.renderer.dispose();
+    this.rig.dispose();
+    this.env.dispose?.();
+    this.reverb.dispose();
   }
 }

@@ -353,7 +353,9 @@ function createEmberHearth(ctx: SceneContext): SceneInstance {
 
   // ── 空间音源：炉火噼啪声从炉膛里传来 ────────────────────────────
   const crackle = attachSpatialSource(root, ctx.listener, {
-      reverbNode: ctx.reverb,
+    reverbNode: ctx.reverb,
+    enabled: !ctx.isPreview,
+    controller: ctx.spatialAudio,
     url: assetUrl('audio/sfx-fire.mp3'),
     position: [0, 0.62, 0],
     volume: 0.4,

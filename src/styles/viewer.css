@@ -20,7 +20,8 @@
   left: 0;
   right: 0;
   z-index: 20;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
@@ -34,6 +35,7 @@
 }
 
 .back-link {
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -90,6 +92,70 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+
+.viewer__tools {
+  position: relative;
+  min-width: 0;
+  max-width: 520px;
+  justify-self: end;
+}
+
+.viewer__xr-status {
+  margin: 8px 0 0;
+  max-width: 60ch;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.viewer__extras { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+.text-control, .experience-settings summary {
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 13, 22, 0.8);
+  color: var(--text-dim); font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.text-control[aria-pressed='true'] { color: var(--accent); border-color: var(--accent); }
+.experience-settings summary { list-style: none; }
+.experience-settings summary::-webkit-details-marker { display: none; }
+.settings-panel {
+  position: absolute; top: calc(100% + 10px); right: 0; z-index: 35;
+  width: min(320px, calc(100vw - 32px)); max-height: min(450px, calc(100dvh - 310px)); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px; padding: 18px;
+  border: 1px solid var(--line-strong); border-radius: 18px; background: rgba(10, 13, 22, 0.97);
+  box-shadow: var(--shadow-card); overscroll-behavior: contain;
+}
+.experience-settings:not([open]) .settings-panel { display: none; }
+.settings-panel label { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: var(--text); }
+.settings-panel select { padding: 9px; max-width: 170px; border-radius: 9px; border: 1px solid var(--line-strong); color: var(--text); background: var(--bg-soft); font: inherit; }
+.settings-panel input[type='checkbox'] { width: 20px; height: 20px; accent-color: var(--accent); }
+.settings-panel .btn { justify-content: center; font-size: 13px; }
+.settings-hint { margin: -5px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+.session-countdown { color: var(--text-dim); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.viewer-message {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 28;
+  width: min(480px, calc(100% - 32px)); padding: 24px; border-radius: 20px;
+  background: rgba(10, 13, 22, 0.96); border: 1px solid var(--line-strong); box-shadow: var(--shadow-card);
+}
+.viewer-message h2 { margin: 0 0 12px; font-size: 22px; }
+.viewer-message p { color: var(--text-dim); line-height: 1.7; font-size: 14px; }
+.message-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.message-actions .btn { padding: 10px 16px; }
+.viewer-message[hidden], .restore-controls[hidden], .breath[hidden] { display: none; }
+.restore-controls { position: fixed; right: 18px; top: 18px; z-index: 30; }
+.controls-hidden :is(.viewer__top, .viewer__bottom) { visibility: hidden; pointer-events: none; }
+
+.icon-btn[hidden] {
+  display: none;
+}
+
+.viewer :is(button, a, input, select):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.viewer button:disabled {
+  cursor: default;
 }
 
 /* 底部 HUD */
@@ -314,8 +380,8 @@
 
 .mixer {
   position: absolute;
-  top: 66px;
-  right: clamp(16px, 3vw, 34px);
+  top: calc(100% + 10px);
+  right: 0;
   z-index: 30;
   width: 236px;
   padding: 14px 16px 12px;
@@ -366,9 +432,8 @@
 /* ---------- 环境预设 ---------- */
 
 .modes {
-  position: absolute;
-  top: 92px;
-  left: clamp(16px, 3vw, 34px);
+  grid-column: 1 / -1;
+  justify-self: start;
   z-index: 21;
   display: flex;
   gap: 6px;
@@ -449,17 +514,20 @@
 /* ---------- 沉浸模式提示条 ---------- */
 
 .xr-banner {
-  position: absolute;
-  top: 84px;
+  position: fixed;
+  top: 50%;
   left: 50%;
   transform: translateX(-50%);
   z-index: 22;
+  width: max-content;
+  max-width: calc(100% - 32px);
   padding: 9px 18px;
   border-radius: 999px;
   background: rgba(10, 13, 22, 0.8);
   border: 1px solid var(--line);
   backdrop-filter: blur(12px);
   font-size: 12.5px;
+  line-height: 1.6;
   color: var(--text-dim);
   opacity: 0;
   pointer-events: none;
@@ -470,10 +538,80 @@
   opacity: 1;
 }
 
+@media (max-width: 1040px) {
+  .viewer__top {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px 18px;
+  }
+
+  .viewer__tools {
+    grid-column: 1 / -1;
+    width: 100%;
+    max-width: none;
+  }
+
+  .viewer__actions {
+    justify-content: flex-end;
+  }
+
+  .audio-ctl {
+    margin-right: auto;
+  }
+
+  .viewer__xr-status {
+    max-width: none;
+    text-align: left;
+  }
+}
+
 @media (max-width: 720px) {
+  .viewer__top {
+    padding-top: max(16px, env(safe-area-inset-top));
+    gap: 10px 14px;
+  }
+
+  .viewer__title {
+    font-size: 22px;
+    gap: 3px 10px;
+  }
+
+  .viewer__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .viewer__actions > .btn {
+    padding: 10px 8px;
+    min-height: 44px;
+  }
+
+  .viewer__extras { justify-content: space-between; gap: 8px; }
+
+  .audio-ctl {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .audio-ctl .volume {
+    display: block;
+    flex: 1;
+    width: auto;
+    max-width: 180px;
+  }
+
+  .audio-ctl #mixer-toggle {
+    margin-left: auto;
+  }
+
+  .mixer {
+    width: min(280px, 100%);
+  }
+
   .viewer__bottom {
     flex-direction: column;
     align-items: stretch;
+    gap: 14px;
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
   }
 
   .viewer__nav {
@@ -483,5 +621,43 @@
   .scene-select {
     flex: 1;
     max-width: none;
+  }
+}
+
+@media (max-height: 500px) and (max-width: 1040px) {
+  .settings-panel { position: fixed; top: 16px; right: 16px; max-height: calc(100dvh - 32px); }
+  .viewer__top {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    padding-top: 10px;
+    gap: 6px 12px;
+  }
+
+  .viewer__tools {
+    grid-column: auto;
+  }
+
+  .viewer__actions {
+    display: flex;
+  }
+
+  .audio-ctl .volume,
+  .viewer__title em,
+  .viewer__tags,
+  .breath {
+    display: none;
+  }
+
+  .viewer__actions > .btn {
+    padding: 10px;
+  }
+
+  .viewer__bottom {
+    flex-direction: row;
+    padding-top: 10px;
+  }
+
+  .viewer__desc {
+    margin-bottom: 0;
+    font-size: 12px;
   }
 }

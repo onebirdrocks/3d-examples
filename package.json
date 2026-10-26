@@ -6,10 +6,14 @@
   "description": "Lumen Atlas — 可在网页与 Vision Pro 上浏览的 3D 效果画廊",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && node scripts/build-thumbnails.mjs --check && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview --port 4173 --host",
-    "verify": "node scripts/verify-scenes.mjs"
+    "verify": "node scripts/verify-scenes.mjs",
+    "verify:viewer": "node scripts/verify-viewer.mjs",
+    "verify:experience": "node scripts/verify-experience.mjs",
+    "thumbnails:build": "node scripts/build-thumbnails.mjs",
+    "thumbnails:check": "node scripts/build-thumbnails.mjs --check"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.12.0",

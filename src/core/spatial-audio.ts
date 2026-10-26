@@ -16,6 +16,35 @@ export interface SpatialSourceOptions {
   maxDistance?: number;
   /** 共享混响总线的输入节点（可选）：接上后声音带上房间感。 */
   reverbNode?: AudioNode;
+  /** 预览图不下载或播放音效。 */
+  enabled?: boolean;
+  controller?: SpatialAudioBus;
+}
+
+/** 统一管理场景内音源的静音和释放，不依赖异步下载完成顺序。 */
+export class SpatialAudioBus {
+  private readonly sources = new Set<SpatialSource>();
+  private enabled = true;
+
+  add(source: SpatialSource): void {
+    this.sources.add(source);
+    source.setEnabled(this.enabled);
+  }
+
+  remove(source: SpatialSource): void { this.sources.delete(source); }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    for (const source of this.sources) source.setEnabled(enabled);
+  }
+
+  clear(root?: THREE.Object3D): void {
+    for (const source of [...this.sources]) {
+      let owner: THREE.Object3D | null = source.sound;
+      while (root && owner && owner !== root) owner = owner.parent;
+      if (!root || owner === root) source.dispose();
+    }
+  }
 }
 
 /**
@@ -42,6 +71,10 @@ export class SpatialSource {
   private blocked = 0;
   private frame = 0;
   private occludersCollected = false;
+  private disposed = false;
+  private enabled = true;
+  private readonly abort = new AbortController();
+  private readonly controller?: SpatialAudioBus;
 
   constructor(
     sound: THREE.PositionalAudio,
@@ -50,6 +83,7 @@ export class SpatialSource {
   ) {
     this.sound = sound;
     this.baseVolume = options.volume ?? 0.5;
+    this.controller = options.controller;
 
     const context = sound.context;
     const bus = reverbInput ?? options.reverbNode;
@@ -61,6 +95,27 @@ export class SpatialSource {
       sound.getOutput().connect(this.filter);
       if (bus) this.filter.connect(bus);
     }
+    this.controller?.add(this);
+  }
+
+  async load(url: string): Promise<void> {
+    try {
+      const buffer = await loadAudioBuffer(this.sound.context, url, this.abort.signal);
+      if (this.disposed) return;
+      this.sound.setBuffer(buffer);
+      this.setEnabled(this.enabled);
+    } catch (error) {
+      if (!this.disposed && !this.abort.signal.aborted) {
+        console.warn('[spatial-audio] 空间音源暂不可用', error);
+      }
+    }
+  }
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    if (this.disposed) return;
+    if (!enabled && this.sound.isPlaying) this.sound.pause();
+    else if (enabled && this.sound.buffer && !this.sound.isPlaying) this.sound.play();
   }
 
   /** 每帧调用：周期性做遮挡检测并平滑应用。 */
@@ -110,7 +165,11 @@ export class SpatialSource {
   }
 
   dispose(): void {
-    this.sound.stop();
+    if (this.disposed) return;
+    this.disposed = true;
+    this.abort.abort();
+    this.controller?.remove(this);
+    if (this.sound.isPlaying) this.sound.stop();
     this.sound.disconnect();
     this.filter?.disconnect();
   }
@@ -145,22 +204,14 @@ export function attachSpatialSource(
 
   root.add(sound);
 
-  // three r186 的 Audio 没有 load()，需要自己取流并解码后 setBuffer
-  void loadAudioBuffer(listener.context, options.url)
-    .then((buffer) => {
-      sound.setBuffer(buffer);
-      return sound.play();
-    })
-    .catch((error) => {
-      console.warn('[spatial-audio] 空间音源播放失败（可能需要用户手势）', error);
-    });
-
-  return new SpatialSource(sound, options, reverbInput);
+  const source = new SpatialSource(sound, options, reverbInput);
+  if (options.enabled !== false) void source.load(options.url);
+  return source;
 }
 
 /** 抓取并解码音频。 */
-async function loadAudioBuffer(context: BaseAudioContext, url: string): Promise<AudioBuffer> {
-  const response = await fetch(url);
+async function loadAudioBuffer(context: BaseAudioContext, url: string, signal: AbortSignal): Promise<AudioBuffer> {
+  const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`空间音源加载失败：${url} (${response.status})`);
   const bytes = await response.arrayBuffer();
   return context.decodeAudioData(bytes);

@@ -22,6 +22,7 @@ export function createEnvironment(renderer: THREE.WebGLRenderer): SceneEnvironme
 
   return {
     envMap,
+    dispose: () => envRT.dispose(),
 
     createStudioLights() {
       const group = new THREE.Group();

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { XRPlanes } from 'three/addons/webxr/XRPlanes.js';
 import { HandSkeleton } from './hand-skeleton.js';
 import type { Stage } from '../core/stage.js';
 import type { AmbientAudio } from '../core/audio.js';
@@ -15,6 +14,8 @@ export interface XrExplorerOptions {
   thumbnails: Map<string, string>;
   /** 可选的环境音播放器：进入沉浸场景时同步播放该场景的音乐。 */
   audio?: AmbientAudio;
+  /** 保留网页上用户选择的静音状态；未提供时默认播放。 */
+  audioEnabled?: () => boolean;
   /** AR 模式的 DOM 叠层根节点（用于显示操作提示）。 */
   overlayRoot?: HTMLElement;
   onModeChange?: (mode: XrMode, scene: SceneDefinition | null) => void;
@@ -71,10 +72,13 @@ export class XrExplorer {
   private readonly scenes: readonly SceneDefinition[];
   private readonly thumbnails: Map<string, string>;
   private readonly audio?: AmbientAudio;
+  private readonly audioEnabled?: () => boolean;
   private readonly overlayRoot?: HTMLElement;
   private readonly onModeChange?: (mode: XrMode, scene: SceneDefinition | null) => void;
 
   private session: XRSession | null = null;
+  private starting = false;
+  private sceneToken = 0;
   private wallGroup: THREE.Group | null = null;
   private panels: ScenePanel[] = [];
   private backPanel: THREE.Mesh | null = null;
@@ -88,7 +92,7 @@ export class XrExplorer {
   private activeScene: SceneDefinition | null = null;
 
   /* 手部追踪与捏合 */
-  private readonly handModels: THREE.Object3D[] = [];
+  private readonly handModels: ReturnType<Stage['renderer']['xr']['getHand']>[] = [];
   private readonly handSkeletons: HandSkeleton[] = [];
   private readonly pinching = new Set<unknown>();
   private readonly pinchInfo: PinchInfo = {
@@ -104,7 +108,6 @@ export class XrExplorer {
   private readonly pinchHand = new THREE.Vector3();
 
   /* AR 命中测试 */
-  private planes: XRPlanes | null = null;
   private hitTestSource: XRHitTestSource | null = null;
   private hitResult: XRHitTestResult | null = null;
   private reticle: THREE.Mesh | null = null;
@@ -125,6 +128,7 @@ export class XrExplorer {
     this.scenes = options.scenes;
     this.thumbnails = options.thumbnails;
     this.audio = options.audio;
+    this.audioEnabled = options.audioEnabled;
     this.overlayRoot = options.overlayRoot;
     this.onModeChange = options.onModeChange;
     this.stage.addFrameListener(this.update);
@@ -143,10 +147,7 @@ export class XrExplorer {
 
   /** 请求进入沉浸会话（必须由用户手势触发）。 */
   async enter(initial?: SceneDefinition): Promise<void> {
-    const xr = navigator.xr;
-    if (!xr) throw new Error('当前浏览器不支持 WebXR');
-
-    const session = await xr.requestSession('immersive-vr', {
+    await this.startSession('immersive-vr', {
       optionalFeatures: [
         'local-floor',
         'bounded-floor',
@@ -156,21 +157,45 @@ export class XrExplorer {
       ],
     });
 
-    await this.stage.renderer.xr.setSession(session);
-    this.session = session;
-    session.addEventListener('end', this.handleSessionEnd);
-    session.addEventListener('select', this.handleSelect);
-    session.addEventListener('selectend', this.handleSelectEnd);
-    this.setupHandTracking();
+    try {
+      this.session!.addEventListener('select', this.handleSelect);
+      this.session!.addEventListener('selectend', this.handleSelectEnd);
+      this.setupHandTracking();
+      this.stage.hostScene.background = new THREE.Color(0x03050b);
+      this.stage.setXRActive(true);
+      this.stage.start();
 
-    this.stage.hostScene.background = new THREE.Color(0x03050b);
-    this.stage.setXRActive(true);
-    this.stage.start();
+      if (initial) {
+        await this.showScene(initial);
+      } else {
+        this.showWall();
+      }
+    } catch (error) {
+      await this.exit();
+      throw error;
+    }
+  }
 
-    if (initial) {
-      await this.showScene(initial);
-    } else {
-      this.showWall();
+  private async startSession(mode: XRSessionMode, options: XRSessionInit): Promise<void> {
+    if (this.starting || this.session) throw new Error('空间体验已在启动或运行中');
+    const xr = navigator.xr;
+    if (!xr) throw new Error('当前浏览器不支持空间体验');
+    this.starting = true;
+    try {
+      const session = await xr.requestSession(mode, options);
+      this.session = session;
+      session.addEventListener('end', this.handleSessionEnd);
+      // AR 设备不一定提供 local-floor，优先采用设备实际支持的参考空间。
+      this.stage.renderer.xr.setReferenceSpaceType(
+        session.enabledFeatures?.includes('local-floor') ? 'local-floor' : 'local',
+      );
+      await this.stage.renderer.xr.setSession(session);
+      if (this.session !== session) throw new Error('空间体验已结束，请重试');
+    } catch (error) {
+      await this.exit();
+      throw error;
+    } finally {
+      this.starting = false;
     }
   }
 
@@ -190,14 +215,9 @@ export class XrExplorer {
       this.stage.hostScene.add(hand);
       this.handModels.push(hand);
       this.handSkeletons.push(skeleton);
+      hand.addEventListener('pinchstart', this.handlePinchStart);
+      hand.addEventListener('pinchend', this.handlePinchEnd);
     }
-
-    // three r186 会派发 pinchstart / pinchend，但类型表里没收录，这里用宽松签名注册
-    const loose = xrManager as unknown as {
-      addEventListener(type: string, listener: (event: unknown) => void): void;
-    };
-    loose.addEventListener('pinchstart', this.handlePinchStart);
-    loose.addEventListener('pinchend', this.handlePinchEnd);
   }
 
   /**
@@ -207,50 +227,46 @@ export class XrExplorer {
    * 指示环 → 用户看向想放置的位置 → 捏合/点击即放置 → 场景锚定在真实空间中。
    */
   async enterAr(initial: SceneDefinition): Promise<void> {
-    const xr = navigator.xr;
-    if (!xr) throw new Error('当前浏览器不支持 WebXR');
-
-    const session = await xr.requestSession('immersive-ar', {
+    await this.startSession('immersive-ar', {
       requiredFeatures: ['hit-test'],
       optionalFeatures: [
         'local-floor',
         'anchors',
         'light-estimation',
-        'plane-detection',
         'dom-overlay',
       ],
       ...(this.overlayRoot ? { domOverlay: { root: this.overlayRoot } } : {}),
     });
 
-    await this.stage.renderer.xr.setSession(session);
-    this.session = session;
-    session.addEventListener('end', this.handleSessionEnd);
-    session.addEventListener('select', this.handleArSelect);
-    this.setupHandTracking();
+    const session = this.session!;
+    try {
+      session.addEventListener('select', this.handleArSelect);
+      this.setupHandTracking();
+      const viewerSpace = await session.requestReferenceSpace('viewer');
+      if (typeof session.requestHitTestSource !== 'function') {
+        throw new DOMException('当前设备不支持真实空间放置', 'NotSupportedError');
+      }
+      const source = await session.requestHitTestSource({ space: viewerSpace });
+      if (this.session !== session) {
+        source?.cancel();
+        throw new Error('空间体验已结束，请重试');
+      }
+      if (!source) throw new DOMException('当前设备不支持真实空间放置', 'NotSupportedError');
+      this.hitTestSource = source;
+      this.arPlaced = false;
+      this.createReticle();
 
-    // 真实平面检测：让内容能贴合你真实的桌面 / 墙面
-    this.planes = new XRPlanes(this.stage.renderer);
-    this.stage.hostScene.add(this.planes);
+      this.stage.hostScene.background = null;
+      this.stage.setXRActive(true);
+      this.stage.setManualPlacement(true);
+      this.stage.start();
+      this.stage.unmount();
 
-    const viewerSpace = await session.requestReferenceSpace('viewer');
-    if (typeof session.requestHitTestSource !== 'function') {
-      throw new Error('当前设备不支持命中测试（hit-test）');
+      await this.showScene(initial, 'ar');
+    } catch (error) {
+      await this.exit();
+      throw error;
     }
-    const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-    if (!hitTestSource) throw new Error('当前设备不支持命中测试（hit-test）');
-    this.hitTestSource = hitTestSource;
-
-    this.mode = 'ar';
-    this.arPlaced = false;
-    this.createReticle();
-
-    // AR 下透出真实世界，不画背景
-    this.stage.hostScene.background = null;
-    this.stage.setXRActive(true);
-    this.stage.setManualPlacement(true);
-    this.stage.start();
-
-    await this.showScene(initial);
   }
 
   private createReticle(): void {
@@ -313,12 +329,7 @@ export class XrExplorer {
     instance.root.position.copy(this.arPosition);
     instance.root.quaternion.copy(this.arQuaternion);
 
-    // 若命中了真实平面，让内容「贴着」那个平面站（桌面 / 墙面）
-    const plane = this.findNearestPlane(this.arPosition);
-    if (plane) {
-      plane.getWorldQuaternion(this.arQuaternion);
-      instance.root.quaternion.copy(this.arQuaternion);
-    }
+    // 命中位姿已经包含真实表面的朝向，无需用附近的调试平面覆盖它。
 
     instance.root.visible = true;
     this.arPlaced = true;
@@ -326,8 +337,13 @@ export class XrExplorer {
 
     // 尽量创建锚点，让场景稳稳留在真实空间里
     try {
+      const session = this.session;
       const anchor = await this.hitResult?.createAnchor?.();
       if (anchor) {
+        if (this.session !== session) {
+          anchor.delete();
+          return;
+        }
         this.arAnchor = anchor;
         await this.persistAnchor(anchor, this.activeScene?.id ?? '');
       }
@@ -339,7 +355,7 @@ export class XrExplorer {
   /**
    * 申请持久锚点句柄并保存到本地。
    *
-   * visionOS 支持持久锚点：场景放进房间后，下次打开仍在原位。
+   * 仅在设备实际支持持久锚点时保存，普通 AR 放置不依赖此能力。
    */
   private async persistAnchor(anchor: XRAnchor, sceneId: string): Promise<void> {
     const request = (anchor as unknown as { requestPersistentHandle?: () => Promise<string> })
@@ -348,6 +364,7 @@ export class XrExplorer {
 
     try {
       const handle = await request.call(anchor);
+      if (this.arAnchor !== anchor) return;
       const list = loadStoredAnchors().filter((item) => item.sceneId !== sceneId);
       list.push({
         handle,
@@ -376,6 +393,10 @@ export class XrExplorer {
 
     try {
       const anchor = await restore.call(session, stored.handle);
+      if (this.session !== session) {
+        anchor.delete();
+        return false;
+      }
       this.arAnchor = anchor;
       this.arPosition.set(...stored.position);
       this.arQuaternion.set(...stored.quaternion);
@@ -386,25 +407,6 @@ export class XrExplorer {
       console.warn('[xr] 持久锚点恢复失败', error);
       return false;
     }
-  }
-
-  /** 找到离给定点最近的真实平面网格。 */
-  private findNearestPlane(point: THREE.Vector3): THREE.Mesh | null {
-    if (!this.planes) return null;
-    let best: THREE.Mesh | null = null;
-    let bestDistance = Infinity;
-    this.tmpVector.set(0, 0, 0);
-    for (const child of this.planes.children) {
-      if (!(child instanceof THREE.Mesh)) continue;
-      child.getWorldPosition(this.tmpVector);
-      const distance = this.tmpVector.distanceTo(point);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = child;
-      }
-    }
-    // 1.2 米以内才认为是同一个平面，避免贴到不相干的远处平面
-    return best && bestDistance < 1.2 ? best : null;
   }
 
   /** 锚点存在时，让内容跟随锚点微调位置。 */
@@ -424,21 +426,42 @@ export class XrExplorer {
   }
 
   private readonly handleSessionEnd = () => {
+    this.session?.removeEventListener('end', this.handleSessionEnd);
+    this.session?.removeEventListener('select', this.handleSelect);
+    this.session?.removeEventListener('selectend', this.handleSelectEnd);
+    this.session?.removeEventListener('select', this.handleArSelect);
     this.session = null;
+    ++this.sceneToken;
+    this.pendingAction = null;
+    this.transition = 1;
     this.clearWall();
+    this.clearLoadingPanel();
     this.clearBackPanel();
     this.clearReticle();
     this.hitTestSource?.cancel?.();
     this.hitTestSource = null;
     this.hitResult = null;
+    this.arAnchor?.delete();
     this.arAnchor = null;
     this.arPlaced = false;
     this.pinching.clear();
     this.pinchHit = false;
     this.pinchables.length = 0;
+    for (const hand of this.handModels) {
+      hand.removeEventListener('pinchstart', this.handlePinchStart);
+      hand.removeEventListener('pinchend', this.handlePinchEnd);
+      this.stage.hostScene.remove(hand);
+    }
+    for (const skeleton of this.handSkeletons) {
+      skeleton.group.removeFromParent();
+      skeleton.dispose();
+    }
+    this.handModels.length = 0;
+    this.handSkeletons.length = 0;
     this.stage.unmount();
     this.stage.setXRActive(false);
     this.stage.setManualPlacement(false);
+    this.stage.renderer.xr.setReferenceSpaceType('local-floor');
     this.stage.hostScene.background = null;
     this.audio?.stop();
     this.mode = 'wall';
@@ -501,6 +524,7 @@ export class XrExplorer {
   /* ---------------- 手部捏合 ---------------- */
 
   private readonly handlePinchStart = () => {
+    if (this.mode === 'ar') return;
     this.pinching.add('hand');
     this.dispatchPinch('start');
   };
@@ -584,6 +608,10 @@ export class XrExplorer {
 
   /** 切回场景墙。 */
   showWall(): void {
+    ++this.sceneToken;
+    this.pendingAction = null;
+    this.pinchables.length = 0;
+    this.pinching.clear();
     if (this.wallGroup) this.clearWall();
     this.stage.unmount();
     this.clearBackPanel();
@@ -603,23 +631,35 @@ export class XrExplorer {
   }
 
   /** 进入某个场景的沉浸模式。 */
-  async showScene(def: SceneDefinition): Promise<void> {
-    this.mode = 'scene';
+  async showScene(def: SceneDefinition, mode: 'scene' | 'ar' = 'scene'): Promise<void> {
+    const token = ++this.sceneToken;
+    this.pinchables.length = 0;
+    this.pinching.clear();
+    this.clearBackPanel();
+    this.mode = mode;
     this.activeScene = def;
-    this.onModeChange?.('scene', def);
+    this.onModeChange?.(mode, def);
 
     this.showLoading(def.title);
     this.transition = 0;
     this.pendingAction = () => {
       this.clearWall();
       this.clearLoadingPanel();
-      void this.mountScene(def);
+      void this.mountScene(def, token);
     };
   }
 
-  private async mountScene(def: SceneDefinition): Promise<void> {
+  private async mountScene(def: SceneDefinition, token: number): Promise<void> {
     try {
       const instance = await def.create(this.stage.context);
+      if (token !== this.sceneToken) {
+        instance.dispose();
+        return;
+      }
+      const mode = def.modes?.find((item) => item.id === this.stage.currentMode?.id)
+        ?? def.modes?.[0] ?? null;
+      this.stage.setMode(mode);
+      this.stage.audio.setFallback(def.breathing ?? null);
       this.stage.mount(instance, def);
 
       // AR 模式：先尝试恢复上次的持久锚点，没有再让用户手动放置
@@ -627,15 +667,17 @@ export class XrExplorer {
         instance.root.visible = false;
         const restored =
           this.session && (await this.restoreAnchor(this.session, def.id));
+        if (token !== this.sceneToken) return;
         if (restored) {
           instance.root.position.copy(this.arPosition);
           instance.root.quaternion.copy(this.arQuaternion);
           instance.root.visible = true;
         }
       }
-      this.createBackPanel(def);
+      if (this.mode !== 'ar') this.createBackPanel(def);
       await this.playSceneAudio(def);
     } catch (error) {
+      if (token !== this.sceneToken) return;
       console.error('[xr] 场景加载失败', error);
       this.showLoading('场景加载失败，请返回');
     }
@@ -644,15 +686,12 @@ export class XrExplorer {
   /** 沉浸场景同步播放该场景的环境音（没有音乐的场景保持静音）。 */
   private async playSceneAudio(def: SceneDefinition): Promise<void> {
     if (!this.audio) return;
-    if (!def.audio && !def.audioPlaylist?.length) {
-      this.audio.stop();
+    if (this.audioEnabled?.() === false) {
+      this.audio.pause();
       return;
     }
     try {
-      const source = def.audioPlaylist?.length
-        ? def.audioPlaylist.map((name) => `audio/${name}`)
-        : `audio/${def.audio}`;
-      await this.audio.play(source);
+      await this.audio.playScene(def, this.stage.currentMode);
     } catch (error) {
       console.warn('[xr] 环境音播放失败', error);
     }
@@ -837,6 +876,7 @@ export class XrExplorer {
     if (!this.loadingPanel) return;
     this.stage.hostScene.remove(this.loadingPanel);
     this.loadingPanel.geometry.dispose();
+    (this.loadingPanel.material as THREE.MeshBasicMaterial).map?.dispose();
     (this.loadingPanel.material as THREE.Material).dispose();
     this.loadingPanel = null;
   }
@@ -845,6 +885,7 @@ export class XrExplorer {
     if (!this.backPanel) return;
     this.stage.hostScene.remove(this.backPanel);
     this.backPanel.geometry.dispose();
+    (this.backPanel.material as THREE.MeshBasicMaterial).map?.dispose();
     (this.backPanel.material as THREE.Material).dispose();
     this.backPanel = null;
   }
@@ -875,6 +916,12 @@ export class XrExplorer {
 
   /** 退出沉浸会话。 */
   async exit(): Promise<void> {
-    await this.session?.end();
+    const session = this.session;
+    if (!session) return;
+    try {
+      await session.end();
+    } finally {
+      if (this.session === session) this.handleSessionEnd();
+    }
   }
 }

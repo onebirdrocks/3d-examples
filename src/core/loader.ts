@@ -37,6 +37,9 @@ export function loadGLTF(url: string): Promise<THREE.Group> {
   });
 
   templates.set(url, promise);
+  void promise.catch(() => {
+    if (templates.get(url) === promise) templates.delete(url);
+  });
   return promise;
 }
 

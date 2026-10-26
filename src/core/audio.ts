@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { AudioAnalysis } from './audio-analysis.js';
-import type { AudioLayerDefinition, SceneMode } from '../scenes/types.js';
+import type { AudioLayerDefinition, SceneDefinition, SceneMode } from '../scenes/types.js';
+import { assetUrl } from './loader.js';
 
 /**
  * 环境音播放器
@@ -22,7 +23,9 @@ import type { AudioLayerDefinition, SceneMode } from '../scenes/types.js';
  * 让空间音源听起来真的在「一个房间里」，而不是贴在耳边。
  * 返回的 GainNode 作为混响输入，音源把它接上去即可。
  */
-export function createReverbBus(context: BaseAudioContext, wetness = 0.32): GainNode {
+export type ReverbBus = GainNode & { dispose(): void };
+
+export function createReverbBus(context: BaseAudioContext, wetness = 0.32, destination: AudioNode = context.destination): ReverbBus {
   const convolver = context.createConvolver();
   convolver.buffer = createImpulseResponse(context, 1.8, 2.6);
 
@@ -33,8 +36,15 @@ export function createReverbBus(context: BaseAudioContext, wetness = 0.32): Gain
 
   input.connect(convolver);
   convolver.connect(wet);
-  wet.connect(context.destination);
-  return input;
+  wet.connect(destination);
+  const bus = input as ReverbBus;
+  bus.dispose = () => {
+    input.disconnect();
+    convolver.disconnect();
+    wet.disconnect();
+    convolver.buffer = null;
+  };
+  return bus;
 }
 
 /** 程序化生成一段脉冲响应。 */
@@ -89,6 +99,7 @@ interface AudioChannel {
   buffers: AudioBuffer[];
   index: number;
   active: { source: AudioBufferSourceNode; gain: GainNode; timer: number } | null;
+  readonly voices: Set<{ source: AudioBufferSourceNode; gain: GainNode }>;
   /** 用户设定的基础音量 0~1。 */
   volume: number;
   /** 环境预设带来的倍率。 */
@@ -106,6 +117,8 @@ export class AmbientAudio {
   private readonly options: Required<AmbientAudioOptions>;
   private volume = 0.55;
   private analysis: AudioAnalysis | null = null;
+  private requestToken = 0;
+  private sessionGain = 1;
 
   constructor(options: AmbientAudioOptions = {}) {
     this.options = {
@@ -125,6 +138,7 @@ export class AmbientAudio {
 
   /** 是否正在播放。 */
   get isPlaying(): boolean {
+    if (this.context?.state !== 'running') return false;
     for (const channel of this.channels.values()) {
       if (channel.active) return true;
     }
@@ -140,6 +154,26 @@ export class AmbientAudio {
     return this.volume;
   }
 
+  /** 网页与 XR 共用场景音频入口，暂停后继续使用已有图层与混音设置。 */
+  async playScene(def: SceneDefinition, mode: SceneMode | null = def.modes?.[0] ?? null): Promise<void> {
+    let playback: Promise<void>;
+    if (def.audioLayers?.length) {
+      playback = this.setLayers(def.audioLayers.map((layer) => ({
+        ...layer,
+        urls: layer.urls.map((name) => assetUrl(`audio/${name}`)),
+      })));
+    } else if (def.audioPlaylist?.length || def.audio) {
+      const names = def.audioPlaylist?.length ? def.audioPlaylist : [def.audio!];
+      playback = this.play(names.map((name) => assetUrl(`audio/${name}`)));
+    } else {
+      this.stop();
+      return;
+    }
+    const token = this.requestToken;
+    await playback;
+    if (token === this.requestToken) this.applyMode(mode);
+  }
+
   /* ------------------------------------------------------------------ *
    * 多路图层
    * ------------------------------------------------------------------ */
@@ -149,29 +183,52 @@ export class AmbientAudio {
    * 每路有独立的音量，用户可以分别调节。
    */
   async setLayers(layers: readonly AudioLayerDefinition[]): Promise<void> {
+    const token = ++this.requestToken;
     const context = this.ensureContext();
     await this.resumeIfPossible();
+    if (token !== this.requestToken) return;
+
+    const same = layers.length === this.channels.size && layers.every((layer) => {
+      const channel = this.channels.get(layer.id);
+      const paths = this.bufferPaths.get(layer.id);
+      return channel?.buffers.length && paths?.length === layer.urls.length &&
+        layer.urls.every((url, index) => paths[index] === url);
+    });
+    if (same) {
+      this.resumeChannels();
+      return;
+    }
 
     // 停掉所有旧通道（包括主通道），否则两层声音会叠在一起
     for (const id of [...this.channels.keys()]) {
       this.stopChannel(id);
     }
 
-    const now = context.currentTime;
-
-    for (const layer of layers) {
+    await Promise.all(layers.map(async (layer) => {
       const channel = this.createChannel(layer.id, layer.volume ?? 0.4);
+      this.bufferPaths.set(layer.id, [...layer.urls]);
       for (const url of layer.urls) {
         try {
-          channel.buffers.push(await this.loadBuffer(url));
+          const buffer = await this.loadBuffer(url);
+          if (token !== this.requestToken) return;
+          channel.buffers.push(buffer);
         } catch (error) {
+          if (token !== this.requestToken) return;
           console.warn(`[audio] 图层「${layer.label}」加载失败`, error);
         }
       }
+    }));
+    if (token !== this.requestToken) return;
+    if (![...this.channels.values()].some((channel) => channel.buffers.length)) {
+      throw new Error('环境音未能加载，请重试');
+    }
+    const now = context.currentTime;
+    for (const channel of this.channels.values()) {
       if (channel.buffers.length) {
         this.startChannelLoop(channel, now, this.options.fadeIn);
       }
     }
+    this.analysis?.attach(this.analyser!);
   }
 
   /** 设定某一图层的音量 0~1。 */
@@ -228,6 +285,7 @@ export class AmbientAudio {
       buffers: [],
       index: 0,
       active: null,
+      voices: new Set(),
       volume,
       multiplier: 1,
     };
@@ -246,8 +304,10 @@ export class AmbientAudio {
    * 也可以传一个数组：多首曲目会首尾相接、交叉淡化连续播放。
    */
   async play(pathOrPaths: string | string[]): Promise<void> {
+    const token = ++this.requestToken;
     const context = this.ensureContext();
     await this.resumeIfPossible();
+    if (token !== this.requestToken) return;
 
     const paths = Array.isArray(pathOrPaths) ? pathOrPaths : [pathOrPaths];
 
@@ -262,7 +322,7 @@ export class AmbientAudio {
       existing.buffers.length === paths.length &&
       paths.every((p, i) => this.bufferPaths.get(existing.id)?.[i] === p);
     if (same) {
-      this.setMasterGain(this.volume);
+      this.resumeChannels();
       return;
     }
 
@@ -272,42 +332,47 @@ export class AmbientAudio {
 
     for (const p of paths) {
       try {
-        channel.buffers.push(await this.loadBuffer(p));
+        const buffer = await this.loadBuffer(p);
+        if (token !== this.requestToken) return;
+        channel.buffers.push(buffer);
       } catch (error) {
+        if (token !== this.requestToken) return;
         console.warn('[audio] 音频加载失败', p, error);
       }
     }
-    if (!channel.buffers.length) return;
+    if (!channel.buffers.length) throw new Error('环境音未能加载，请重试');
 
     this.startChannelLoop(channel, context.currentTime, this.options.transition);
+    this.analysis?.attach(this.analyser!);
   }
 
   private readonly bufferPaths = new Map<string, string[]>();
 
   /** 暂停（重新播放会从头开始）。 */
   pause(): void {
+    ++this.requestToken;
     if (!this.context) return;
     const now = this.context.currentTime;
     for (const channel of this.channels.values()) {
-      if (!channel.active) continue;
-      channel.active.gain.gain.cancelScheduledValues(now);
-      channel.active.gain.gain.setValueAtTime(channel.active.gain.gain.value, now);
-      channel.active.gain.gain.linearRampToValueAtTime(0.0001, now + 0.6);
-      const active = channel.active;
+      window.clearTimeout(channel.active?.timer);
       channel.active = null;
-      window.setTimeout(() => {
+      for (const voice of channel.voices) {
+        voice.gain.gain.cancelScheduledValues(now);
+        voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+        voice.gain.gain.linearRampToValueAtTime(0.0001, now + 0.6);
         try {
-          active.source.stop();
+          voice.source.stop(now + 0.6);
         } catch {
           /* 已经停止 */
         }
-      }, 800);
+      }
     }
     this.analysis?.detach();
   }
 
   /** 停止并清除全部声音。 */
   stop(): void {
+    ++this.requestToken;
     for (const id of [...this.channels.keys()]) {
       this.stopChannel(id);
     }
@@ -319,22 +384,41 @@ export class AmbientAudio {
   private stopChannel(id: string): void {
     const channel = this.channels.get(id);
     if (!channel) return;
-    if (channel.active) {
+    window.clearTimeout(channel.active?.timer);
+    channel.active = null;
+    for (const voice of channel.voices) {
       try {
-        channel.active.source.stop();
+        voice.source.stop();
       } catch {
         /* 已经停止 */
       }
-      window.clearTimeout(channel.active.timer);
-      channel.active = null;
+      voice.source.disconnect();
+      voice.gain.disconnect();
     }
+    channel.voices.clear();
+    channel.gain.disconnect();
     this.channels.delete(id);
     this.bufferPaths.delete(id);
+  }
+
+  private resumeChannels(): void {
+    this.setMasterGain(this.volume);
+    for (const channel of this.channels.values()) {
+      if (!channel.active && channel.buffers.length) {
+        this.startChannelLoop(channel, this.context!.currentTime, this.options.fadeIn);
+      }
+    }
+    this.analysis?.attach(this.analyser!);
   }
 
   /** 设置总线音量（0~1），影响所有图层。 */
   setVolume(value: number): void {
     this.volume = Math.max(0, Math.min(1, value));
+    this.setMasterGain(this.volume);
+  }
+
+  setSessionGain(value: number): void {
+    this.sessionGain = THREE.MathUtils.clamp(value, 0, 1);
     this.setMasterGain(this.volume);
   }
 
@@ -354,9 +438,16 @@ export class AmbientAudio {
   dispose(): void {
     this.stop();
     this.buffers.clear();
-    void this.context?.close();
+    this.master?.disconnect();
+    this.breathGain?.disconnect();
+    this.breathFilter?.disconnect();
+    this.analyser?.disconnect();
+    this.analysis?.detach();
+    // AudioContext 与场景音源共用，播放器只释放自己的节点。
     this.context = null;
     this.master = null;
+    this.breathGain = null;
+    this.breathFilter = null;
     this.analyser = null;
   }
 
@@ -408,7 +499,7 @@ export class AmbientAudio {
     if (!this.context || !this.master) return;
     const now = this.context.currentTime;
     this.master.gain.cancelScheduledValues(now);
-    this.master.gain.setTargetAtTime(Math.max(0.0001, value), now, 0.12);
+    this.master.gain.setTargetAtTime(Math.max(0.0001, value * this.sessionGain), now, 0.12);
   }
 
   private async loadBuffer(path: string): Promise<AudioBuffer> {
@@ -452,6 +543,13 @@ export class AmbientAudio {
     gain.gain.setValueAtTime(0.0001, when);
     gain.gain.linearRampToValueAtTime(1, when + fadeIn);
     source.connect(gain).connect(channel.gain);
+    const voice = { source, gain };
+    channel.voices.add(voice);
+    source.onended = () => {
+      channel.voices.delete(voice);
+      source.disconnect();
+      gain.disconnect();
+    };
     source.start(when);
 
     channel.active = { source, gain, timer: 0 };
