@@ -12,6 +12,7 @@
     "verify": "node scripts/verify-scenes.mjs",
     "verify:viewer": "node scripts/verify-viewer.mjs",
     "verify:experience": "node scripts/verify-experience.mjs",
+    "verify:flappy": "node scripts/verify-flappy.mjs",
     "thumbnails:build": "node scripts/build-thumbnails.mjs",
     "thumbnails:check": "node scripts/build-thumbnails.mjs --check"
   },

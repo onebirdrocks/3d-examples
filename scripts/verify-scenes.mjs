@@ -76,7 +76,7 @@ async function readSceneIds() {
     fs.readFile(resolve(ROOT, 'src/scenes/index.ts'), 'utf8'),
   );
   const ids = new Set();
-  const moduleRe = /from '\.\/(?:procedural|models|meditation|sleep|environment|simulation)\/([a-z0-9-]+)\.js'/g;
+  const moduleRe = /from '\.\/(?:procedural|models|meditation|sleep|environment|simulation|games)\/([a-z0-9-]+)\.js'/g;
   let match;
   while ((match = moduleRe.exec(source)) !== null) ids.add(match[1]);
   return [...ids].sort();

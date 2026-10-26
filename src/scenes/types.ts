@@ -36,6 +36,8 @@ export interface SceneContext {
   readonly quality: number;
   /** 是否正在 XR 沉浸会话中渲染。 */
   readonly isXR: boolean;
+  /** 减少装饰性动态；交互游戏仍保留必要的运动。 */
+  readonly reducedMotion?: boolean;
   /** 当前视口像素尺寸（XR 下为单眼尺寸）。 */
   readonly width: number;
   readonly height: number;
@@ -75,6 +77,12 @@ export interface SceneInstance {
    * 命中时 `info.hit` 为 true，`info.point` 是命中点（场景局部坐标）。
    */
   onPinch?(info: PinchInfo): void;
+  /** 离散主操作，在 XR selectstart 时触发，不依赖完整手部追踪。 */
+  onAction?(): void;
+  /** 暂停渲染或进入后台时中止正在进行的交互。 */
+  onSuspend?(): void;
+  /** 需要持续响应操作的场景；减少动态时仍运行必要的游戏逻辑。 */
+  readonly interactive?: boolean;
   /**
    * 切换环境预设时由核心层调用。
    * 场景把 `mode.params` 解释成自己的画面参数。
@@ -112,8 +120,8 @@ export interface SceneFraming {
   width?: number;
 }
 
-/** 场景分类：程序化效果 / 模型材质 / 冥想 / 助眠 / 真实环境 / 模拟。 */
-export type SceneCategory = 'procedural' | 'model' | 'meditation' | 'sleep' | 'environment' | 'simulation';
+/** 场景分类：程序化效果 / 模型材质 / 冥想 / 助眠 / 真实环境 / 模拟 / 游戏。 */
+export type SceneCategory = 'procedural' | 'model' | 'meditation' | 'sleep' | 'environment' | 'simulation' | 'game';
 
 /**
  * 捏合交互信息。

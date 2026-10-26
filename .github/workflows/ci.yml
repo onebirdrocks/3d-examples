@@ -17,7 +17,7 @@ jobs:
       # 不让某一片失败就掐掉其它片，好一次看清到底哪几个场景有问题
       fail-fast: false
       matrix:
-        # 48 个场景在软渲染的 runner 上串行要跑近一小时；
+        # 全部场景在软渲染的 runner 上串行较慢；
         # 拆成 6 片并行后总算力不变，墙钟时间降到约 1/6。
         shard: [0, 1, 2, 3, 4, 5]
     steps:
@@ -51,3 +51,7 @@ jobs:
       - name: 整体体验回归检查
         if: matrix.shard == 0
         run: npm run verify:experience
+
+      - name: 飞鸟游戏回归检查
+        if: matrix.shard == 0
+        run: npm run verify:flappy

@@ -27,7 +27,7 @@ document.querySelector('#footer-status')!.textContent = `${SCENES.length} 个场
 
 const thumbnails = new Map(SCENES.map((scene) => [scene.id, assetUrl(`thumbnails/${scene.id}.webp`)]));
 const cards = new Map<string, HTMLElement>();
-const labels: Record<string, string> = { procedural: '程序化效果', model: '模型 · 材质', meditation: '冥想', sleep: '助眠', environment: '真实环境', simulation: '模拟' };
+const labels: Record<string, string> = { procedural: '程序化效果', model: '模型 · 材质', meditation: '冥想', sleep: '助眠', environment: '真实环境', simulation: '模拟', game: '小游戏' };
 
 function buildCard(def: SceneDefinition, index: number): HTMLElement {
   const card = document.createElement('article');

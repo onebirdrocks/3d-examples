@@ -55,6 +55,7 @@ import mistyPinesScene from './environment/misty-pines.js';
 import harborDuskScene from './environment/harbor-dusk.js';
 import riceTerraceScene from './environment/rice-terrace.js';
 import moonlightGardenScene from './environment/moonlight-garden.js';
+import flappyBirdScene from './games/flappy-bird.js';
 
 /** 全部场景，按画廊展示顺序排列。 */
 export const SCENES: readonly SceneDefinition[] = [
@@ -106,6 +107,7 @@ export const SCENES: readonly SceneDefinition[] = [
   harborDuskScene,
   riceTerraceScene,
   moonlightGardenScene,
+  flappyBirdScene,
 ];
 
 export const SCENE_CATEGORIES = [
@@ -116,6 +118,7 @@ export const SCENE_CATEGORIES = [
   { id: 'sleep', label: '助眠' },
   { id: 'environment', label: '真实环境' },
   { id: 'simulation', label: '模拟' },
+  { id: 'game', label: '小游戏' },
 ] as const;
 
 export function getSceneById(id: string): SceneDefinition | undefined {

@@ -125,7 +125,7 @@ export class Stage {
     this.resize();
   }
 
-  get visualPaused(): boolean { return this.paused || this.reducedMotion; }
+  get visualPaused(): boolean { return this.paused || (this.reducedMotion && !this.instance?.interactive); }
 
   setPaused(paused: boolean): void {
     this.paused = paused;
@@ -189,6 +189,7 @@ export class Stage {
       env: this.env,
       quality: this.quality,
       isXR: this.renderer.xr.isPresenting,
+      reducedMotion: this.reducedMotion,
       width: Math.max(1, Math.floor(size.x)),
       height: Math.max(1, Math.floor(size.y)),
       audio: this.audio,
@@ -213,8 +214,10 @@ export class Stage {
     if (this.activeMode) this.instance.setMode?.(this.activeMode);
     if (this.visualPaused) {
       instance.update(this.elapsedTime, 0, this.context);
+      instance.onSuspend?.();
       this.renderOnce();
     }
+    this.syncLoop();
   }
 
   /**
@@ -305,6 +308,7 @@ export class Stage {
     const xr = this.xrActive || this.renderer.xr.isPresenting;
     const shouldRun = this.wantsToRun && !this.contextLost && (xr || (!document.hidden && !this.visualPaused));
     if (shouldRun === this.running) return;
+    if (!shouldRun) this.instance?.onSuspend?.();
     this.running = shouldRun;
     this.timer.reset();
     this.renderer.setAnimationLoop(shouldRun ? this.frame : null);

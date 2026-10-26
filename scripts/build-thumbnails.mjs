@@ -9,12 +9,15 @@ import { createServer } from 'vite';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const source = await readFile(resolve(root, 'src/scenes/index.ts'), 'utf8');
-const ids = [...source.matchAll(/from '\.\/(?:procedural|models|meditation|sleep|environment|simulation)\/([a-z0-9-]+)\.js'/g)].map((match) => match[1]);
+const ids = [...source.matchAll(/from '\.\/(?:procedural|models|meditation|sleep|environment|simulation|games)\/([a-z0-9-]+)\.js'/g)].map((match) => match[1]);
 const output = resolve(root, 'public/thumbnails');
 if (process.argv.includes('--check')) {
   for (const id of ids) assert.ok((await stat(resolve(output, `${id}.webp`))).size > 100, `${id} 缺少预览图`);
   console.log(`✓ ${ids.length} 张静态预览完整`);
 } else {
+  const requested = process.argv.find((arg) => arg.startsWith('--scene='))?.slice(8);
+  const selected = requested ? ids.filter((id) => id === requested) : ids;
+  assert.ok(selected.length, `找不到场景：${requested}`);
   const executablePath = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].find(existsSync);
   assert.ok(executablePath, '需要已有 Chrome / Chromium，不自动下载');
   const server = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
@@ -33,7 +36,7 @@ if (process.argv.includes('--check')) {
       window.scenes = SCENES;
     });
     await mkdir(output, { recursive: true });
-    for (const id of ids) {
+    for (const id of selected) {
       const url = await page.evaluate((id) => window.baker.bake(window.scenes.find((scene) => scene.id === id), { mimeType: 'image/webp' }), id);
       assert.ok(url.startsWith('data:image/webp;base64,'), `${id} 编码失败`);
       await writeFile(resolve(output, `${id}.webp`), Buffer.from(url.split(',')[1], 'base64'));

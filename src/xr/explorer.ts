@@ -158,6 +158,7 @@ export class XrExplorer {
     });
 
     try {
+      this.session!.addEventListener('selectstart', this.handleActionStart);
       this.session!.addEventListener('select', this.handleSelect);
       this.session!.addEventListener('selectend', this.handleSelectEnd);
       this.setupHandTracking();
@@ -240,6 +241,7 @@ export class XrExplorer {
 
     const session = this.session!;
     try {
+      session.addEventListener('selectstart', this.handleActionStart);
       session.addEventListener('select', this.handleArSelect);
       this.setupHandTracking();
       const viewerSpace = await session.requestReferenceSpace('viewer');
@@ -427,6 +429,7 @@ export class XrExplorer {
 
   private readonly handleSessionEnd = () => {
     this.session?.removeEventListener('end', this.handleSessionEnd);
+    this.session?.removeEventListener('selectstart', this.handleActionStart);
     this.session?.removeEventListener('select', this.handleSelect);
     this.session?.removeEventListener('selectend', this.handleSelectEnd);
     this.session?.removeEventListener('select', this.handleArSelect);
@@ -470,6 +473,27 @@ export class XrExplorer {
     window.dispatchEvent(new Event('xr-sessionended'));
   };
 
+  /** 游戏在捏合开始时响应；select / 骨架 pinch 不再重复触发主操作。 */
+  private readonly handleActionStart = (event: XRInputSourceEvent) => {
+    const instance = this.stage.current;
+    if ((this.mode !== 'scene' && !(this.mode === 'ar' && this.arPlaced)) || !instance?.onAction) return;
+    if (this.session?.visibilityState && this.session.visibilityState !== 'visible') return;
+    const frame = event.frame ?? this.stage.renderer.xr.getFrame();
+    const refSpace = this.stage.renderer.xr.getReferenceSpace();
+    const pose = frame && refSpace && event.inputSource.targetRaySpace
+      ? frame.getPose(event.inputSource.targetRaySpace, refSpace) : null;
+    if (pose && this.backPanel) {
+      this.tmpMatrix.fromArray(pose.transform.matrix);
+      this.tmpOrigin.setFromMatrixPosition(this.tmpMatrix);
+      this.tmpQuat.setFromRotationMatrix(this.tmpMatrix);
+      this.tmpDir.set(0, 0, -1).applyQuaternion(this.tmpQuat).normalize();
+      this.raycaster.set(this.tmpOrigin, this.tmpDir);
+      this.raycaster.far = 10;
+      if (this.raycaster.intersectObject(this.backPanel, false).length) return;
+    }
+    instance.onAction();
+  };
+
   private readonly handleSelect = (event: XRInputSourceEvent) => {
     const source = event.inputSource;
     const frame = event.frame ?? this.stage.renderer.xr.getFrame();
@@ -505,6 +529,8 @@ export class XrExplorer {
         return;
       }
     }
+
+    if (this.mode === 'scene' && this.stage.current?.onAction) return;
 
     const hit = this.pickPanel(this.tmpOrigin, this.tmpDir);
     if (hit) {
@@ -826,6 +852,7 @@ export class XrExplorer {
     panel.rotation.y = -0.32;
     panel.userData.isBackPanel = true;
     this.stage.hostScene.add(panel);
+    panel.updateWorldMatrix(true, false);
     this.backPanel = panel;
   }
 

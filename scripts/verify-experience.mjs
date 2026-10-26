@@ -29,13 +29,14 @@ try {
     HTMLCanvasElement.prototype.getContext = function(type, ...args) { if (type.includes('webgl')) window.webglContexts++; return original.call(this, type, ...args); };
   });
   await page.goto(base, { waitUntil: 'networkidle' });
-  assert.equal(await page.locator('.card').count(), 48);
+  const sceneCount = await page.evaluate(async () => (await import('/src/scenes/index.ts')).SCENES.length);
+  assert.equal(await page.locator('.card').count(), sceneCount);
   assert.equal(audioRequests, 0);
   assert.equal(await page.evaluate(() => window.webglContexts), 0);
   assert.equal(await page.locator('#scroll-gallery').isEnabled(), true);
   assert.ok(!(await page.locator('.hero').innerText()).includes('十种'));
   assert.equal(await page.locator('.card__img').first().evaluate((el) => el.naturalWidth > 0), true);
-  console.log('✓ 首页48张静态预览，无WebGL初始化和音效请求，主入口可用');
+  console.log(`✓ 首页${sceneCount}张静态预览，无WebGL初始化和音效请求，主入口可用`);
   if (screenshots) await page.screenshot({ path: resolve(screenshots, 'home-desktop.png') });
 
   await page.locator('#scene-search').fill('月夜');
@@ -67,7 +68,7 @@ try {
   await page.locator('#scene-search').fill('不存在的光影xyz');
   assert.equal(await page.locator('#gallery-empty').isVisible(), true);
   await page.locator('#reset-filters').click();
-  assert.equal(await page.locator('.card:not(.is-hidden)').count(), 48);
+  assert.equal(await page.locator('.card:not(.is-hidden)').count(), sceneCount);
   console.log('✓ 搜索、收藏持久化、最近使用、分类内切换与返回位置恢复');
 
   const denied = await context.newPage();

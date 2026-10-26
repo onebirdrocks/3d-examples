@@ -2,7 +2,7 @@
 
 一个可浏览 **3D 实时效果**的画廊：同一套代码支持普通浏览器与 WebXR 沉浸浏览。Apple Vision Pro 的 Safari 使用 `immersive-vr`；真实空间放置另需浏览器与设备支持 `immersive-ar` 和命中测试，不能把 VR 支持视为 AR 支持。
 
-48 个场景，分六类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
+49 个场景，分七类；场景的视觉**跟随正在播放的音乐变化**；冥想与助眠场景带呼吸引导；戴上头显后场景会真实地环绕在你身边，可以用手直接触碰。
 
 ---
 
@@ -13,10 +13,11 @@ npm install
 npm run dev       # 开发服务器 http://localhost:5173
 npm run build     # 类型检查 + 生产构建 → dist/
 npm run preview   # 预览构建产物 http://localhost:4173
-npm run verify    # 回归检查：逐个打开 48 个场景，查报错 / 黑屏
+npm run verify    # 回归检查：逐个打开 49 个场景，查报错 / 黑屏
 npm run verify:viewer # 场景页按钮、布局、键盘、音频和模拟 XR 交互检查
 npm run verify:experience # 首页导航、收藏、定时与生命周期检查
-npm run thumbnails:build # 场景视觉变化后，重新生成48张静态WebP预览
+npm run verify:flappy # 飞鸟游戏物理、操作、存储和模拟 XR 捏合检查
+npm run thumbnails:build # 场景视觉变化后，重新生成49张静态WebP预览
 npm run thumbnails:check # 检查静态预览完整性
 ```
 
@@ -36,7 +37,7 @@ npm run thumbnails:check # 检查静态预览完整性
 - 隐藏控制栏后，可轻点画面、使用显示按钮或按Esc恢复。减少动态默认遵循系统偏好，显式选择后保存到本机。
 - 收藏、最近使用、音量、静音和体验偏好仅保存在当前浏览器。存储被禁用时退回当前页面内存，不影响正常浏览。
 
-回归检查在 CI 上按 **6 个分片并行**跑（`VERIFY_SHARD` / `VERIFY_SHARDS`）：每个 runner 只跑其中 8 个场景，查逻辑一字不改，整轮约 2 分钟。
+回归检查在 CI 上按 **6 个分片并行**跑（`VERIFY_SHARD` / `VERIFY_SHARDS`）：每个 runner 只跑其中约 8–9 个场景，查逻辑一字不改，整轮约 2 分钟。
 
 渲染档位默认与作者看到的完全一致（视口 640×400、画质 1），需要时可用 `VERIFY_WIDTH` / `VERIFY_HEIGHT` / `VERIFY_QUALITY` 临时调低。
 
@@ -49,7 +50,7 @@ npm run thumbnails:check # 检查静态预览完整性
 
 ---
 
-## 场景清单（48）
+## 场景清单（49）
 
 ### 程序化效果（12）
 `volumetric` 体积光 · `galaxy` 星河漩涡 · `fluid` 流光水面 · `tunnel` 无限隧道 · `aurora` 极光夜空 · `terrain` 云海群山 · `stainedglass` 琉璃彩窗 · `fireflies` 萤火微光 · `gpu-tide` GPU 粒子潮汐 · `metaball` 熔核等值面 · `neon-pipeline` 霓虹雨夜 · `crystal-cave` SDF 晶体洞穴
@@ -68,6 +69,13 @@ npm run thumbnails:check # 检查静态预览完整性
 
 ### 模拟（2）
 `silk-drape` 悬垂绸缎 · `piano-ruins` 废墟里的钢琴
+
+### 小游戏（1）
+`flappy-bird` 云间飞鸟 · Flappy Bird
+
+首页选择「玩云间飞鸟」，或在「小游戏」分类打开。Vision Pro 的 Safari 进入沉浸模式后，捏合开始、扇翅和重开；桌面与手机支持轻点画面、空格和操作按钮，P 键暂停。穿过每对绿管得 1 分，最高分只保存在当前浏览器。
+
+游戏固定视点，只有小鸟和障碍运动；减少动态时保留必要的游戏运动。切到后台或失去焦点时暂停，回来后需主动继续。沉浸操作使用 XRSession 的 selectstart，完整手部追踪未授权时也无需依赖手指骨架。浏览器回归使用模拟 XR 接口，不代表 Vision Pro 真机验证。
 
 ---
 
@@ -169,7 +177,7 @@ WebXR 只在**安全上下文**（HTTPS 或 localhost）可用。Vision Pro 的 
 ```
 src/
   core/        核心运行时：舞台 / 环境 / 取景 / 音频 / 粒子空间 / 光照装置
-  scenes/      48 个场景，按分类分目录；types.ts 是场景契约
+  scenes/      49 个场景，按分类分目录；types.ts 是场景契约
   ui/          呼吸引导
   xr/          WebXR：空间墙、探索器（沉浸 / AR）、手部骨架
   styles/      样式

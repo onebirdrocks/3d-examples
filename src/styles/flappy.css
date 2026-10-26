@@ -1,0 +1,36 @@
+.flappy-controls {
+  position: absolute;
+  z-index: 19;
+  left: 50%;
+  bottom: max(94px, calc(env(safe-area-inset-bottom) + 78px));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  text-align: center;
+  font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+}
+.flappy-controls[hidden] { display: none; }
+.flappy-status { margin: 0 0 9px; color: #b8d6c9; font-size: 12px; font-variant-numeric: tabular-nums; }
+.flappy-actions { display: flex; justify-content: center; gap: 10px; }
+.flappy-actions button {
+  min-height: 44px;
+  padding: 10px 24px;
+  border: 1px solid #8ad4ac;
+  border-radius: 999px;
+  background: #a7dfb8;
+  color: #102e2b;
+  font: 600 14px/1.4 system-ui, -apple-system, 'PingFang SC', sans-serif;
+  cursor: pointer;
+}
+.flappy-actions .flappy-pause { padding-inline: 18px; background: #122c30; color: #d2e6da; border-color: #42645e; }
+.flappy-actions button:disabled { opacity: .45; cursor: default; }
+.flappy-actions button:focus-visible { outline: 2px solid #ffe1a0; outline-offset: 4px; }
+.viewer:has(.flappy-controls) .viewer__info { display: none; }
+.viewer:has(.flappy-controls) .viewer__bottom { justify-content: flex-end; pointer-events: none; }
+.viewer:has(.flappy-controls) .viewer__nav { pointer-events: auto; }
+.viewer:has(.flappy-controls) .viewer__canvas { touch-action: none; }
+@media (max-height: 500px) {
+  .flappy-controls { bottom: 76px; }
+  .flappy-status { margin-bottom: 5px; }
+  .flappy-actions button { padding: 6px 18px; }
+}
