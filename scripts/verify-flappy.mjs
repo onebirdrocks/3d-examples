@@ -10,7 +10,16 @@ import { createServer } from 'vite';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const executablePath = ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].find(existsSync);
 assert.ok(executablePath, '需要已有 Chrome / Chromium，不自动下载');
-const server = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
+const server = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false }, plugins: [{
+  name: 'flappy-height-fixture',
+  configureServer(server) {
+    server.middlewares.use((request, response, next) => {
+      if (request.url !== '/__height-probe') { next(); return; }
+      response.setHeader('Content-Type', 'text/html; charset=utf-8');
+      response.end('<!doctype html><html lang="zh-CN"><title>飞行高度检查</title><link rel="icon" href="data:,"><style>html,body{margin:0}#view{display:block;width:100vw;height:100vh}</style><body><div class="viewer"><canvas id="view"></canvas></div></body></html>');
+    });
+  },
+}] });
 const screenshots = process.env.FLAPPY_SCREENSHOTS;
 let browser;
 try {
@@ -28,6 +37,7 @@ try {
   if (screenshots) await page.screenshot({ path: resolve(screenshots, 'flappy-ready.png') });
   const physics = await page.evaluate(async () => {
     const { FlappyFlight, FLIGHT } = await import('/src/scenes/games/flappy-model.ts');
+    const { flightGuidance } = await import('/src/scenes/games/flappy-guidance.ts');
     const results = {};
     const frames = [60, 90, 120].map((hz) => {
       const model = new FlappyFlight(() => 0.5); model.action();
@@ -58,10 +68,30 @@ try {
     recycling.pipes[0].x = -3; recycling.pipes[0].passed = true;
     recycling.advance(1 / 60);
     results.boundedPool = recycling.pipes.length === 4 && recycling.pipes[0].x > recycling.pipes[3].x && recycling.pipes.every((pipe) => pipe.center >= 1.16 && pipe.center <= 1.94);
+    const guide = new FlappyFlight(() => 0.5); guide.action();
+    guide.y = 1.15; guide.velocity = 0.5;
+    const low = flightGuidance(guide);
+    results.lowHeight = low.alignment === 'low' && low.motion === 'rising';
+    guide.y = 1.95; guide.velocity = -0.5;
+    const high = flightGuidance(guide);
+    results.highHeight = high.alignment === 'high' && high.motion === 'falling';
+    guide.y = 1.55;
+    const aligned = flightGuidance(guide);
+    results.centerHeight = aligned.alignment === 'aligned' && Math.abs(aligned.height - 0.5) < 1e-9 && aligned.safeLow > 0 && aligned.safeHigh < 1;
+    guide.y = guide.pipes[0].center - guide.pipes[0].gap / 2 + FLIGHT.radius / 2;
+    results.bodyClearance = flightGuidance(guide).alignment === 'low';
+    guide.pipes[0].x = -0.8;
+    results.crossing = flightGuidance(guide).crossing && flightGuidance(guide).target === guide.pipes[0];
+    guide.pipes[0].passed = true; guide.pipes[1].x = 3; guide.pipes[2].x = 1;
+    results.nearestUpcoming = flightGuidance(guide).target === guide.pipes[2];
+    guide.pause(); results.pausedMotion = flightGuidance(guide).motion === 'steady';
+    guide.pipes.forEach((pipe) => { pipe.passed = true; });
+    results.noTarget = flightGuidance(guide).target === null;
     return results;
   });
   assert.ok(Object.values(physics).every(Boolean), JSON.stringify(physics));
   console.log('✓ 固定步长、暂停恢复、单次计分、管道/天地碰撞、重开保护与障碍复用');
+  console.log('✓ 高低与升降提示独立计算、鸟身净空、穿越期间与循环后的目标选择');
 
   const hud = page.locator('.flappy-controls');
   await page.getByRole('button', { name: '开始飞行', exact: true }).click();
@@ -201,6 +231,12 @@ try {
     instance.camera.position.copy(position); instance.camera.quaternion.copy(rotation);
     instance.update(0, 0, context);
     results.naturalTracking = instance.camera.position.equals(position) && instance.camera.quaternion.equals(rotation);
+    const marker = instance.root.getObjectByName('flappy-flight-height-marker');
+    const opening = instance.root.getObjectByName('flappy-next-opening');
+    results.worldHeightReference = marker.parent === corridor && marker.position.y === 1.55 * 3 && opening.userData.targetIndex === 0;
+    const beforeMarker = marker.getWorldPosition(new THREE.Vector3());
+    instance.camera.rotation.set(-0.4, -0.6, 0.2); instance.update(0, 0, context);
+    results.gazeDoesNotSteerHeight = marker.getWorldPosition(new THREE.Vector3()).equals(beforeMarker);
     function selectControl(name) {
       instance.root.updateWorldMatrix(true, true);
       const target = instance.root.getObjectByName(name).getWorldPosition(new THREE.Vector3());
@@ -229,6 +265,47 @@ try {
   });
   assert.ok(Object.values(firstPerson).every(Boolean), JSON.stringify(firstPerson));
   console.log('✓ 第一人称纵深和眼高、保留头部姿态、空间按钮切换/暂停/恢复与 AR 侧视回退');
+
+  const heightProbe = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  heightProbe.on('pageerror', (error) => errors.push(error.message));
+  heightProbe.on('console', (message) => { if (message.type() === 'error') errors.push(`${message.text()} (${message.location().url})`); });
+  await heightProbe.goto(`${base}/__height-probe`);
+  for (const [state, seed, steps] of [['low', 1, 114], ['high', 0, 36], ['aligned', 0.5, 78]]) {
+    const observed = await heightProbe.evaluate(async ({ seed, steps }) => {
+      window.heightStage?.dispose();
+      const { Stage } = await import('/src/core/stage.ts');
+      const definition = (await import('/src/scenes/games/flappy-bird.ts')).default;
+      localStorage.setItem('lumen-atlas:flappy-bird:view', JSON.stringify('first-person'));
+      const previousRandom = Math.random;
+      let instance;
+      try {
+        Math.random = () => seed;
+        window.heightStage = new Stage({ canvas: document.querySelector('#view') });
+        instance = await definition.create(window.heightStage.context);
+      } finally { Math.random = previousRandom; }
+      const stage = window.heightStage; stage.mount(instance, definition); instance.onAction();
+      for (let i = 0; i < steps; i++) instance.update(i / 120, 1 / 120, stage.context);
+      instance.update(0, 0, stage.context); stage.renderOnce();
+      const guide = instance.root.getObjectByName('flappy-altimeter');
+      return { alignment: guide.userData.alignment, height: guide.userData.height, visible: guide.visible };
+    }, { seed, steps });
+    assert.ok(observed.visible && observed.alignment === state, JSON.stringify({ state, observed }));
+    if (screenshots) await heightProbe.screenshot({ path: resolve(screenshots, `flappy-height-${state}-1280.png`) });
+    await heightProbe.setViewportSize({ width: 390, height: 844 });
+    const mobileFits = await heightProbe.evaluate(() => {
+      const stage = window.heightStage, instance = stage.current; stage.resize();
+      instance.update(0, 0, stage.context); stage.renderOnce();
+      const guide = instance.root.getObjectByName('flappy-altimeter');
+      const { position, scale } = guide;
+      const halfWidth = 2.8 * Math.tan(35 * Math.PI / 180) * innerWidth / innerHeight;
+      return position.x - 0.6 * scale.x >= -halfWidth && position.x + 0.6 * scale.x < 0;
+    });
+    assert.ok(mobileFits, '手机高度尺完整显示，给中央缺口留出视野');
+    if (screenshots) await heightProbe.screenshot({ path: resolve(screenshots, `flappy-height-${state}-390.png`) });
+    await heightProbe.setViewportSize({ width: 1280, height: 900 });
+  }
+  await heightProbe.evaluate(() => window.heightStage.dispose()); await heightProbe.close();
+  console.log('✓ 真实飞行状态下的偏低/偏高/对齐渲染，手机高度尺布局与视线高度参照');
 
   const xrResults = await page.evaluate(async () => {
     const { XrExplorer } = await import('/src/xr/explorer.ts');

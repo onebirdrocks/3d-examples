@@ -5,6 +5,7 @@ import { disposeObject } from '../../core/loader.js';
 import { readSaved, save } from '../../core/library.js';
 import { FLIGHT, FlappyFlight } from './flappy-model.js';
 import { FlightCorridor, FLIGHT_SPACE } from './flappy-first-person.js';
+import { FlightAltimeter, flightGuidance } from './flappy-guidance.js';
 import '../../styles/flappy.css';
 
 const BEST_KEY = 'flappy-bird:best';
@@ -136,8 +137,7 @@ function create(ctx: SceneContext): SceneInstance {
   const firstHeader = hudCopy(headerMesh, 0.72);
   const firstMessage = hudCopy(messageMesh, 0);
   const firstFooter = hudCopy(footerMesh, -0.65);
-  const aim = new THREE.Mesh(new THREE.RingGeometry(0.012, 0.016, 24), new THREE.MeshBasicMaterial({ color: 0xffedba, depthTest: false, transparent: true, opacity: 0.85 }));
-  aim.position.set(0, 0, -1.5); aim.renderOrder = 7; firstHUD.add(aim);
+  const altimeter = new FlightAltimeter(); firstHUD.add(altimeter.root);
 
   const viewSurface = canvasSurface(768, 160), pauseSurface = canvasSurface(768, 160);
   textures.push(viewSurface.texture, pauseSurface.texture);
@@ -172,7 +172,10 @@ function create(ctx: SceneContext): SceneInstance {
     const h = header.context;
     h.clearRect(0, 0, 1536, 160);
     const inset = view === 'first-person' ? 34 : 0;
-    if (view === 'first-person') { h.fillStyle = 'rgba(9,34,41,.9)'; h.beginPath(); h.roundRect(0, 0, 1536, 160, 32); h.fill(); }
+    if (view === 'first-person') {
+      h.fillStyle = 'rgba(9,34,41,.9)'; h.beginPath(); h.roundRect(0, 0, 610, 160, 32); h.fill();
+      h.beginPath(); h.roundRect(1210, 0, 326, 160, 32); h.fill();
+    }
     h.textAlign = 'left'; h.fillStyle = '#dff9df'; h.font = `700 57px ${FONT}`; h.fillText('FLAPPY BIRD', inset, 76);
     h.fillStyle = '#9bbfb3'; h.font = `26px ${FONT}`; h.fillText(view === 'first-person' ? '第一人称 · 迎风飞行' : '云间飞鸟 · 侧视', inset + 2, 126);
     h.textAlign = 'right'; h.fillStyle = '#ffdb83'; h.font = `700 73px ${FONT}`; h.fillText(String(flight.score).padStart(2, '0'), 1534 - inset, 83);
@@ -182,7 +185,7 @@ function create(ctx: SceneContext): SceneInstance {
     f.clearRect(0, 0, 1536, 110);
     if (view === 'first-person') { f.fillStyle = 'rgba(9,34,41,.9)'; f.beginPath(); f.roundRect(0, 0, 1536, 110, 32); f.fill(); }
     f.fillStyle = '#d4eadb'; f.font = `38px ${FONT}`; f.textAlign = 'center';
-    f.fillText(context.isXR ? '捏合扇翅 · 看向下方按钮可切换视角或暂停' : '轻点画面 / 空格扇翅 · P 暂停 · V 切换视角', 768, 66);
+    f.fillText(view === 'first-person' ? '金色标记是你的高度 · 对准亮框 · 偏低时扇翅上升' : context.isXR ? '捏合扇翅 · 看向下方按钮可切换视角或暂停' : '轻点画面 / 空格扇翅 · P 暂停 · V 切换视角', 768, 66);
     footer.texture.needsUpdate = true;
     const titles = { ready: '轻轻一捏，向上飞', playing: '', paused: '歇一会儿', over: '再飞一次？' };
     const subtitles = { ready: context.isXR ? '捏合开始 · 每穿过一对绿管得 1 分' : '轻点画面或按空格开始', playing: '', paused: context.isXR ? '捏合继续飞行' : '轻点 / 空格继续', over: `本次 ${flight.score} 分 · 最高 ${best} 分` };
@@ -190,7 +193,8 @@ function create(ctx: SceneContext): SceneInstance {
     m.clearRect(0, 0, 1024, 360);
     messageMesh.visible = flight.phase !== 'playing' && !ctx.isPreview;
     firstMessage.visible = messageMesh.visible;
-    aim.visible = flight.phase === 'playing';
+    firstFooter.visible = flight.phase !== 'playing';
+    altimeter.root.visible = view === 'first-person' && flight.phase === 'playing';
     if (messageMesh.visible) {
       m.fillStyle = 'rgba(10,39,43,.92)'; m.beginPath(); m.roundRect(18, 36, 988, 288, 42); m.fill();
       m.strokeStyle = 'rgba(188,242,206,.35)'; m.lineWidth = 2; m.stroke();
@@ -306,13 +310,18 @@ function create(ctx: SceneContext): SceneInstance {
         clipPipe(pipes[i][3], pipe.x, FLIGHT.pipeWidth + 0.07, top + 0.045, 1);
       });
       if (view === 'first-person') {
-        corridor.update(flight, !!next.reducedMotion);
+        const guidance = flightGuidance(flight);
+        corridor.update(flight, !!next.reducedMotion, guidance);
+        altimeter.update(guidance, flight.phase, delta);
+        altimeter.root.visible = flight.phase === 'playing';
+        firstHeader.position.y = next.isXR ? 1.05 : next.height < 500 ? 0.72 : next.width < 720 ? 0.85 : 1.1;
         if (next.isXR) {
           const xrCamera = next.renderer.xr.getCamera();
           if (!eyeOriginCaptured && xrCamera.cameras.length) { xrCamera.getWorldPosition(eyeOrigin); eyeOriginCaptured = true; }
           // 移动世界表达虚拟升降，头显仍完全掌握相机的真实位置与朝向。
           corridor.root.position.copy(eyeOrigin); corridor.root.position.y -= flight.y * FLIGHT_SPACE.height;
           firstHeader.scale.setScalar(0.72); firstFooter.scale.setScalar(0.72); firstMessage.scale.setScalar(0.85);
+          altimeter.layout(0, true);
         } else {
           camera.fov = 70; camera.far = 160; camera.aspect = next.width / next.height;
           camera.position.set(0, flight.y * FLIGHT_SPACE.height, 0); camera.rotation.set(0, 0, 0); camera.updateProjectionMatrix();
@@ -320,6 +329,7 @@ function create(ctx: SceneContext): SceneInstance {
           const width = 2 * 2.8 * Math.tan(35 * Math.PI / 180) * camera.aspect * 0.9;
           firstHeader.scale.setScalar(Math.min(0.72, width / 3.7)); firstFooter.scale.copy(firstHeader.scale);
           firstMessage.scale.setScalar(Math.min(0.85, width / 2.8));
+          altimeter.layout(width / 0.9, false);
         }
       } else if (!next.isXR) {
         camera.fov = 40; camera.far = 100;
@@ -336,7 +346,7 @@ function create(ctx: SceneContext): SceneInstance {
       window.removeEventListener('keydown', keydown); window.removeEventListener('blur', blur);
       flapButton.removeEventListener('click', act); pauseButton.removeEventListener('click', togglePause);
       viewButton.removeEventListener('click', toggleView);
-      panel.remove(); textures.forEach((texture) => texture.dispose()); camera.removeFromParent(); disposeObject(camera); disposeObject(root);
+      panel.remove(); textures.forEach((texture) => texture.dispose()); altimeter.dispose(); camera.removeFromParent(); disposeObject(camera); disposeObject(root);
     },
   };
   instance.update(0, 0, ctx);

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { FLIGHT, type FlappyFlight } from './flappy-model.js';
+import type { FlightGuidance } from './flappy-guidance.js';
 
 /** 侧视的水平进度映射到纵深，升降映射到世界高度；碰撞仍由同一物理模型决定。 */
 export const FLIGHT_SPACE = { height: 3, depth: 6 } as const;
@@ -8,6 +9,9 @@ export class FlightCorridor {
   readonly root = new THREE.Group();
   private readonly gates: THREE.Group[] = [];
   private readonly markers: THREE.Group[] = [];
+  private readonly opening = new THREE.Group();
+  private readonly openingBars: THREE.Mesh[] = [];
+  private readonly flightMarker = new THREE.Group();
 
   constructor(mint: THREE.Material, paleMint: THREE.Material, gold: THREE.Material) {
     this.root.name = 'flappy-first-person-world';
@@ -45,6 +49,17 @@ export class FlightCorridor {
         rail.position.set(x, y, -65); this.root.add(rail);
       }
     }
+    // 固定高度的淡色侧壁刻度，提供升降时的空间参照。
+    const grid: number[] = [];
+    for (const x of [-3.8, 3.8]) {
+      for (let i = 1; i < 4; i++) {
+        const y = bottom + (top - bottom) * i / 4;
+        grid.push(x, y, 8, x, y, -56);
+      }
+      for (let z = 8; z >= -56; z -= 8) grid.push(x, bottom, z, x, top, z);
+    }
+    const gridGeometry = new THREE.BufferGeometry(); gridGeometry.setAttribute('position', new THREE.Float32BufferAttribute(grid, 3));
+    this.root.add(new THREE.LineSegments(gridGeometry, new THREE.LineBasicMaterial({ color: 0xc1ead7, transparent: true, opacity: 0.2, depthWrite: false })));
 
     // 椭圆截面的立体绿管，在中央飞行线上与侧视的碰撞厚度一致。
     const cylinder = new THREE.CylinderGeometry(1, 1, 1, 32, 1, true);
@@ -74,9 +89,25 @@ export class FlightCorridor {
       }
       this.markers.push(marker); this.root.add(marker);
     }
+
+    this.opening.name = 'flappy-next-opening';
+    const edge = new THREE.MeshBasicMaterial({ color: 0x9af6dc, toneMapped: false, depthTest: false, depthWrite: false });
+    const bar = new THREE.BoxGeometry(1, 1, 0.035);
+    for (let i = 0; i < 4; i++) {
+      const mesh = new THREE.Mesh(bar, edge); mesh.renderOrder = 5; this.openingBars.push(mesh); this.opening.add(mesh);
+    }
+    this.root.add(this.opening);
+    this.flightMarker.name = 'flappy-flight-height-marker';
+    const ink = new THREE.MeshBasicMaterial({ color: 0xffd789, toneMapped: false, depthTest: false, depthWrite: false });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.045, 0.065, 24), ink); ring.renderOrder = 6; this.flightMarker.add(ring);
+    for (const x of [-0.3, 0.3]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.035, 0.012), ink);
+      wing.position.x = x; wing.renderOrder = 6; this.flightMarker.add(wing);
+    }
+    this.root.add(this.flightMarker);
   }
 
-  update(flight: FlappyFlight, reducedMotion: boolean): void {
+  update(flight: FlappyFlight, reducedMotion: boolean, guidance: FlightGuidance): void {
     const { height, depth } = FLIGHT_SPACE;
     const floor = FLIGHT.bottom * height, ceiling = FLIGHT.top * height;
     flight.pipes.forEach((pipe, i) => {
@@ -92,5 +123,20 @@ export class FlightCorridor {
     });
     const distance = reducedMotion ? 0 : flight.distance * depth;
     this.markers.forEach((marker, i) => { marker.position.z = 8 - ((i * 8 - distance % 160 + 160) % 160); });
+    const target = guidance.target;
+    const targetZ = target ? -(target.x - FLIGHT.birdX) * depth + (FLIGHT.pipeWidth + 0.07) * depth / 2 + 0.05 : 0;
+    this.opening.visible = !!target && targetZ < -1.5;
+    if (target) {
+      this.opening.position.set(0, target.center * height, targetZ);
+      this.opening.userData.targetIndex = flight.pipes.indexOf(target);
+      const safeHeight = (target.gap - FLIGHT.radius * 2) * height;
+      this.openingBars.forEach((mesh, i) => {
+        if (i < 2) { mesh.scale.set(5.8, 0.065, 1); mesh.position.set(0, (i ? -1 : 1) * safeHeight / 2, 0); }
+        else { mesh.scale.set(0.065, safeHeight, 1); mesh.position.set((i === 2 ? -1 : 1) * 2.9, 0, 0); }
+      });
+    }
+    // 标记沿真实飞行轴线放置；转头不会改变它所表示的飞行高度。
+    this.flightMarker.position.set(0, flight.y * height, -3.2);
+    this.flightMarker.visible = flight.phase === 'playing' || flight.phase === 'paused';
   }
 }
